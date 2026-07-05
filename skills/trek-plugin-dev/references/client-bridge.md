@@ -111,7 +111,9 @@ Consequences:
 * You **cannot** reference a bundled file by path (`./logo.png`, `client/x.svg`)
   or any external URL for images/fonts — the opaque origin voids `'self'` and no
   host is allow-listed. This is why the koffi mascot is **hand-built inline
-  SVG**, not a bundled PNG.
+  SVG**, not a bundled PNG. (Inline `<svg>` vector artwork is **confirmed to
+  render** in a live instance — keep using it for icons/mascots, and re-draw any
+  raster a designer hands you as vector.)
 * To show a raster, inline it as a **`data:` (or `blob:`) URI** — those are the
   only image sources that work. For logos/mascots/icons prefer real inline
   **vector SVG**: no encoding, scales cleanly, themeable via `currentColor`.
@@ -191,3 +193,26 @@ const L = (m.locale || '').toLowerCase().startsWith('de') ? STR.de : STR.en
   uppercase kicker labels, `font-variant-numeric: tabular-nums` for counts.
 - Call `trek:resize` after every render/content change so the card fits exactly.
 - Respect `prefers-reduced-motion` for any animation (koffi does).
+
+### 5. Don't draw your own card — `sidebar` widget vs `page`
+
+A `sidebar` widget renders **inside TREK's own titled card**: the host wraps your
+frame in `<div class="bg-surface-card border border-edge rounded-xl
+overflow-hidden">` with a header showing your plugin's name (`PluginWidgets.tsx`,
+confirmed in a live instance). So your widget's root must be **chrome-free** — a
+background, `border`, `border-radius`, or `box-shadow` on it produces a visible
+**card-in-card**: doubled borders and mismatched top corners.
+
+- Render **transparent and flush**: no bg/border/radius/shadow on the root — let
+  TREK's card be the card. Use the tokens for **text and controls**; keep the
+  **container** bare.
+- A full-bleed accent bar at the very top edge is fine — the host card's
+  `overflow-hidden` clips it to the rounded corners.
+- Leave the last control ~20px **bottom padding**: the card is sized to the
+  height you report via `trek:resize`, so a button flush to the bottom looks
+  cramped.
+
+A `page` plugin is the **opposite**: it renders in a full-page shell with **no**
+host card (`PluginPage.tsx` → `PageShell` + a `w-full h-full` frame), so you own
+the whole surface and draw your own layout. A `hero` widget is a boarding-pass
+overlay, also not a card — draw it to sit on the hero bar, not as a panel.
