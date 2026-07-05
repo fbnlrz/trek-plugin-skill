@@ -143,8 +143,13 @@ Keep key content centred so the 16:10 discover-card crop never clips it (see
 **Composition template (1600×900)** — treat it as a marketing shot, not a raw
 frame grab:
 
-- a soft **full-bleed background** — a subtle gradient in the plugin's accent, or
-  TREK's `--bg-secondary`;
+- a **full-bleed background with real colour that fits the plugin** — a mesh of
+  the plugin's **own accent hues** (a primary + a harmonising second hue) with an
+  optional subtle dot/grid texture. Concentrate the colour toward the corners so
+  the centre stays calm and the cards/title stay focal. **Avoid a flat pale
+  gradient — it looks lame.** (`store-shot.html` builds exactly this from the
+  `accent` / `accent2` / `pattern` you set in its CONFIG — match them to what the
+  widget itself shows, e.g. a weather plugin → sky blue + sunset orange.)
 - a centred **title band**: the plugin **name** + a one-line tagline (system
   font, `--text-primary` / `--text-muted`);
 - the widget in **both themes**, two "cards" side by side — here you *may* draw

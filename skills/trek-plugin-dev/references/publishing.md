@@ -166,9 +166,11 @@ harness in [testing.md](testing.md).
 
 For a **functional widget** (not a mascot), "your artwork" *is* the widget — and
 a lone widget on a blank background passes CI but fills the 16:9 card poorly
-(mostly empty). Compose the shot instead: place the widget(s) in a **titled,
-themed background** (gradient + tagline + a couple of feature pills — plain
-CSS/SVG in the harness page, which is *not* under the frame CSP), and show
+(mostly empty). Compose the shot instead: place the widget(s) in a **titled
+background with real colour that fits the plugin** (a mesh of its own accent hues
++ optional subtle texture, tagline, and a couple of feature pills — plain CSS/SVG
+in the harness page, which is *not* under the frame CSP; don't leave it a flat
+pale gradient), and show
 **light + dark (and, if useful, two data states) at once** via the per-iframe
 multi-context recipe in [testing.md](testing.md#one-screenshot-multiple-themesstates).
 Keep the composition centred for the card crop. A ready-to-edit template that

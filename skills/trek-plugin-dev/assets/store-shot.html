@@ -25,9 +25,10 @@
 <meta charset="utf-8" />
 <title>Store shot</title>
 <style>
-  /* ── Recolor the shot by changing --accent ── */
+  /* ── Palette: set --accent (+ --accent-2) to your plugin's brand (via CONFIG) ── */
   :root {
-    --accent: #4f46e5;                 /* your brand/accent — tints the background + pills */
+    --accent: #4f46e5;                 /* plugin brand — drives the background mesh + pills */
+    --accent-2: #22d3ee;               /* a second, harmonising hue for the mesh */
     --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
@@ -38,11 +39,33 @@
     width: 1600px; height: 900px; overflow: hidden;
     font-family: var(--font);
     display: flex; align-items: center; justify-content: center;
-    background:
-      radial-gradient(1200px 600px at 50% -10%, color-mix(in srgb, var(--accent) 22%, #fff), transparent 60%),
-      linear-gradient(160deg, #f6f7fb 0%, #eef0f6 55%, #e9ebf3 100%);
+    background-color: #eef1f8;
+    /* A colourful mesh built from the plugin's OWN accent hues — not a flat pastel. */
+    background-image:
+      radial-gradient(760px 520px at 6% -14%,  color-mix(in srgb, var(--accent) 62%, transparent), transparent 60%),
+      radial-gradient(720px 560px at 100% 2%,  color-mix(in srgb, var(--accent-2) 58%, transparent), transparent 62%),
+      radial-gradient(900px 760px at 64% 122%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 60%),
+      linear-gradient(150deg, #f5f7fd, #e8ecf7);
   }
-  .safe { width: 1040px; text-align: center; }
+  /* Optional subtle texture (CONFIG.pattern). Above the mesh, below the content. */
+  body.pattern-dots::before, body.pattern-grid::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  }
+  body.pattern-dots::before {
+    background-image: radial-gradient(rgba(255,255,255,.55) 1.3px, transparent 1.4px);
+    background-size: 24px 24px; opacity: .5;
+    -webkit-mask-image: linear-gradient(#000, transparent 78%);
+            mask-image: linear-gradient(#000, transparent 78%);
+  }
+  body.pattern-grid::before {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--accent) 32%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--accent) 32%, transparent) 1px, transparent 1px);
+    background-size: 44px 44px; opacity: .2;
+    -webkit-mask-image: radial-gradient(1200px 700px at 50% 40%, #000, transparent 75%);
+            mask-image: radial-gradient(1200px 700px at 50% 40%, #000, transparent 75%);
+  }
+  .safe { position: relative; z-index: 1; width: 1040px; text-align: center; }
 
   .title { font-size: 34px; font-weight: 700; color: #111827; letter-spacing: -0.02em; }
   .tagline { margin-top: 10px; font-size: 16px; font-weight: 500; color: #6b7280; }
@@ -98,6 +121,12 @@
     name: 'Your Plugin',
     tagline: 'One line on what it does and why it belongs on the dashboard.',
     pills: ['Membership-checked', 'Light & dark', 'No network', 'Zero setup'],
+    // Make the background FIT THE PLUGIN: set accent (+ accent2) to its brand
+    // hues — the mesh + pills derive from these. Pick colours that match what the
+    // widget itself shows (e.g. a weather plugin → sky blue + sunset orange).
+    accent: '#4f46e5',
+    accent2: '#22d3ee',
+    pattern: 'dots',                    // 'dots' | 'grid' | 'none' — subtle texture
     frameHeight: 180,                   // 180 = TREK sidebar slot; raise for taller widgets
     locale: 'en',
     frames: [
@@ -106,6 +135,11 @@
     ],
   }
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Apply the plugin's palette + texture to the background.
+  if (CONFIG.accent)  document.documentElement.style.setProperty('--accent', CONFIG.accent)
+  if (CONFIG.accent2) document.documentElement.style.setProperty('--accent-2', CONFIG.accent2)
+  if (CONFIG.pattern && CONFIG.pattern !== 'none') document.body.classList.add('pattern-' + CONFIG.pattern)
 
   document.getElementById('title').textContent = CONFIG.name
   document.getElementById('tagline').textContent = CONFIG.tagline
