@@ -13,7 +13,7 @@ that adds/updates exactly that file. No server, no account.
 trek-plugin.json      # manifest
 package.json          # "type": "commonjs"; SDK as devDependency at most
 server/index.js       # built server entry (required)
-client/               # built frontend (page/widget only)
+client/               # built frontend (page/widget, and trip-page ≥3.2.1)
 README.md             # must pass the quality gate (below)
 docs/screenshot.png   # store card image — committed, NOT shipped in the zip
 ```
@@ -59,7 +59,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `repo` | `owner/name` (GitHub). Source of truth for the code. |
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
-| `type` | `integration` \| `page` \| `widget`. |
+| `type` | `integration` \| `page` \| `widget` \| `trip-page` **(≥3.2.1)** — a `trip-page` entry only passes the manifest-parity gate against the v3-2-1 schema. |
 | `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |
@@ -166,9 +166,11 @@ harness in [testing.md](testing.md).
 
 For a **functional widget** (not a mascot), "your artwork" *is* the widget — and
 a lone widget on a blank background passes CI but fills the 16:9 card poorly
-(mostly empty). Compose the shot instead: place the widget(s) in a **titled,
-themed background** (gradient + tagline + a couple of feature pills — plain
-CSS/SVG in the harness page, which is *not* under the frame CSP), and show
+(mostly empty). Compose the shot instead: place the widget(s) in a **titled
+background with real colour that fits the plugin** (a mesh of its own accent hues
++ optional subtle texture, tagline, and a couple of feature pills — plain CSS/SVG
+in the harness page, which is *not* under the frame CSP; don't leave it a flat
+pale gradient), and show
 **light + dark (and, if useful, two data states) at once** via the per-iframe
 multi-context recipe in [testing.md](testing.md#one-screenshot-multiple-themesstates).
 Keep the composition centred for the card crop. A ready-to-edit template that

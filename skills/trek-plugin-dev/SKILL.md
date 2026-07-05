@@ -8,7 +8,7 @@ description: Build, test, and publish plugins for TREK, the self-hosted travel p
 Build plugins for [TREK](https://github.com/mauriceboe/TREK), a self-hosted
 trip-planning app. A plugin is a directory with a manifest (`trek-plugin.json`),
 a built CommonJS server entry (`server/index.js`), and — for `page`/`widget`
-types — a static client bundle (`client/`). TREK runs the server part in an
+(and `trip-page`, ≥3.2.1) types — a static client bundle (`client/`). TREK runs the server part in an
 **isolated child process** reached only over RPC, and the UI in a **sandboxed,
 opaque-origin iframe**. Distribution happens through the
 [TREK-Plugins](https://github.com/mauriceboe/TREK-Plugins) registry: a static
@@ -57,31 +57,47 @@ Update flow: bump `version` in the manifest, re-pack, new `vX.Y.Z` tag/release,
 then `entry --merge` onto the existing registry file (newest version first) and
 PR it — see [references/publishing.md](references/publishing.md).
 
-## Show the first UI draft for sign-off
+## Build the UI / store shot *with* the user, not for them
 
-For a `page`/`widget` plugin the UI is subjective — **don't guess whether it
-looks right, and don't just describe it in words.** As soon as the first draft
-renders, **capture a screenshot and show it to the user for approval** before
-polishing or publishing:
+For a `page`/`widget` plugin the look is subjective — **don't silently pick it,
+and don't just describe it in words.** Two rules:
 
-- Drive it headlessly — Chromium/Playwright is preinstalled in Claude Code
-  environments. Screenshot **both light and dark** so they can judge theme
-  support.
-- **≥ SDK 1.3.0:** open `dev`'s themed **`/preview`** and toggle light/dark/accent.
-- **Otherwise, or for a composed shot:** use the host harness or the ready-made
-  [`assets/store-shot.html`](assets/store-shot.html) (both themes side by side).
-- Present the image(s), ask *"does this look right?"*, and iterate on their
-  answer. Once approved, the same shot doubles as the store `docs/screenshot.png`.
+**1. Propose choices interactively, with suggestions.** Before and while building
+the UI and the store image, offer the user concrete options tailored to the
+plugin and let them choose (use an interactive prompt — e.g. Claude Code's
+question UI — not an assumption). Good dimensions to ask about, each with **2–4
+suggestions derived from what the plugin does**:
 
-Get the same visual sign-off on the store preview image before it ships. See
-[references/testing.md](references/testing.md).
+- **Accent colour(s)** — hues that match the subject (weather → sky blue +
+  sunset orange; a Japanese-phrase plugin → warm coral).
+- **Store-shot background** — dark & atmospheric (an accent *glow*) vs. light (a
+  colourful accent *mesh*).
+- **Pattern/texture** — waves / dots / grid / none (some texture so it isn't flat
+  and boring).
+- **Kicker, tagline, and which feature pills** to show.
+- **Layout** — light + dark side by side (shows theme support) vs. a single hero.
+
+**2. Show the draft as a screenshot for sign-off** — don't ship on a description:
+
+- Drive it headlessly (Chromium/Playwright is preinstalled). Screenshot **both
+  light and dark**.
+- **≥ SDK 1.3.0:** open `dev`'s themed **`/preview`** (light/dark/accent toggles).
+- **For the composed store image:** the ready-made
+  [`assets/store-shot.html`](assets/store-shot.html) renders both-theme cards +
+  title + feature pills on an accent-driven background (`glow`/`mesh` ·
+  `waves`/`dots`/`grid`) — set its CONFIG from the choices above.
+- Present the image(s), ask *"does this look right?"*, and iterate. The approved
+  shot doubles as the store `docs/screenshot.png`.
+
+See [references/testing.md](references/testing.md).
 
 ## Choosing the plugin type
 
 | `type` | Surfaces | Use for |
 |---|---|---|
-| `widget` | Dashboard card (`sidebar` slot, fixed ~180px) or a **non-interactive** boarding-pass hero strip (`hero` slot, fixed ~110px, desktop-only, `pointer-events:none`) | At-a-glance info (flight status, weather, mascot) |
+| `widget` | Dashboard card (`sidebar` slot — ~180px on 3.2.0, glassy auto-height on ≥3.2.1) or a **non-interactive** boarding-pass hero strip (`hero` slot, ~110px, desktop-only). **(≥3.2.1)** also the `place-detail` slot → a panel in the trip planner's place inspector (gets `placeId`) | At-a-glance info (flight status, weather, mascot); a per-place add-on |
 | `page` | Own entry in the top navigation → full-page iframe (you own the layout) | A self-contained tool |
+| `trip-page` **(≥3.2.1)** | A tab **inside every trip planner**, scoped to the open trip (`tripId` always set); full-frame like `page`, no dashboard nav | A per-trip tool |
 | `integration` | No UI; background routes only | Feeding/syncing data via routes |
 
 Note: the SDK's `hooks` surface (`photoProvider`, `calendarSource`) validates
@@ -105,15 +121,18 @@ with **routes** (polled by your client or an external trigger), not jobs. See
    only checked for presence). A host listed in `egress[]` but not granted as
    `http:outbound:<host>` is **silently blocked at runtime**. Keep both lists
    identical. Bare `http:outbound` alone reaches nothing.
-4. **`ctx.trips`, `ctx.users`, `ctx.costs`, and `ctx.ws.*` work only inside route
-   handlers** — they need the acting user the host binds from the request; from
-   `onLoad` there is no user → `RESOURCE_FORBIDDEN`. `asUserId` is ignored;
-   `ctx.users` returns only self or a trip co-member (not any account);
-   `ctx.ws.broadcastToUser` can target only the acting user — and **none of these
-   broadcasts reach your own iframe** (poll your route via `trek:invoke` instead).
-   `ctx.costs.*` **(≥3.2.1)** also needs the Costs (budget) addon enabled, and
-   `ctx.costs.create` additionally needs the acting user's `budget_edit`
-   permission (it's the only plugin path that writes core TREK data).
+4. **`ctx.trips`, `ctx.users`, `ctx.costs`, `ctx.ws.*` — and (≥3.2.1)
+   `ctx.places`/`ctx.days`/`ctx.itinerary`/`ctx.trips.update`/`ctx.meta` — work
+   only inside route handlers** (they need the acting user the host binds from the
+   request; from `onLoad`/jobs → `RESOURCE_FORBIDDEN`). `asUserId` is ignored;
+   `ctx.users` returns only self or a trip co-member; `ctx.ws.broadcastToUser`
+   targets only the acting user — and **no broadcast reaches your own iframe**
+   (poll via `trek:invoke`). **(≥3.2.1) several `ctx.*` paths now write core TREK
+   data** (`places`/`days`/`itinerary`/`trips.update`, plus `costs.create`): each
+   is route-only and gated on the acting user's matching edit permission
+   (`place_edit`/`day_edit`/`trip_edit`/`budget_edit`), exactly like the web UI.
+   `ctx.meta` stores the plugin's own namespaced data on a trip/place/day (reads
+   need trip access, writes the entity's edit permission).
 5. **No native modules** — `.node`, `binding.gyp`, `prebuilds/` are refused at
    pack, CI, and install time. `nativeModules` must be `false`/absent.
 6. **Git tag == manifest `version`** (`v1.2.3` ↔ `"version": "1.2.3"`), and the
