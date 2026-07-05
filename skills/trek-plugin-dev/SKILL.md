@@ -61,13 +61,16 @@ PR it — see [references/publishing.md](references/publishing.md).
 
 | `type` | Surfaces | Use for |
 |---|---|---|
-| `widget` | Dashboard card (`sidebar` slot) or boarding-pass hero overlay (`hero` slot, TREK >= 3.2.0) | At-a-glance info (flight status, weather, mascot) |
-| `page` | Own entry in the top navigation → full-page iframe | A self-contained tool |
-| `integration` | No UI; background routes + cron jobs | Feeding or syncing data |
+| `widget` | Dashboard card (`sidebar` slot, fixed ~180px) or a **non-interactive** boarding-pass hero strip (`hero` slot, fixed ~110px, desktop-only, `pointer-events:none`) | At-a-glance info (flight status, weather, mascot) |
+| `page` | Own entry in the top navigation → full-page iframe (you own the layout) | A self-contained tool |
+| `integration` | No UI; background routes only | Feeding/syncing data via routes |
 
 Note: the SDK's `hooks` surface (`photoProvider`, `calendarSource`) validates
-but is **not yet consumed by the host** — the runtime only invokes `onLoad`,
-`onUnload`, `routes`, and `jobs`. Build integrations with routes + jobs.
+but is **not consumed by the host**, and **`jobs[]` are declared but never
+scheduled** in TREK 3.2.0/3.2.1 (there is no cron runner) — the runtime
+effectively only invokes `onLoad`, `onUnload`, and `routes`. Build integrations
+with **routes** (polled by your client or an external trigger), not jobs. See
+[references/server-api.md](references/server-api.md).
 
 ## Critical rules (violating any of these breaks install or CI)
 
@@ -83,20 +86,24 @@ but is **not yet consumed by the host** — the runtime only invokes `onLoad`,
    only checked for presence). A host listed in `egress[]` but not granted as
    `http:outbound:<host>` is **silently blocked at runtime**. Keep both lists
    identical. Bare `http:outbound` alone reaches nothing.
-4. **`ctx.trips` works only inside route handlers** (host binds the acting user
-   from the request and membership-checks every read). In `onLoad` and `jobs`
-   there is no user → `RESOURCE_FORBIDDEN`. The `asUserId` parameter is ignored
-   by the real host.
+4. **`ctx.trips`, `ctx.users`, and `ctx.ws.*` work only inside route handlers**
+   — they need the acting user the host binds from the request; from `onLoad`
+   there is no user → `RESOURCE_FORBIDDEN`. `asUserId` is ignored; `ctx.users`
+   returns only self or a trip co-member (not any account); `ctx.ws.broadcastToUser`
+   can target only the acting user — and **none of these broadcasts reach your
+   own iframe** (poll your route via `trek:invoke` instead).
 5. **No native modules** — `.node`, `binding.gyp`, `prebuilds/` are refused at
    pack, CI, and install time. `nativeModules` must be `false`/absent.
 6. **Git tag == manifest `version`** (`v1.2.3` ↔ `"version": "1.2.3"`), and the
    registry pins the release asset's exact **sha256** — never re-upload or
    mutate a released `plugin.zip`; cut a new version instead.
 7. **README quality gate is a hard CI gate:** sections **What it does /
-   Screenshots / Permissions / Setup**, at least one screenshot resolving to a
-   real image at the pinned commit, >= 400 chars of real prose, no leftover
-   `{{placeholder}}` tokens, and **every declared permission string must appear
-   in the README** with an explanation.
+   Screenshots / Permissions / Setup** (substring-matched, any heading level),
+   ≥ 400 chars of real prose, at least one screenshot whose URL returns
+   `Content-Type: image/*` (a committed file — `data:` URIs don't count), no
+   leftover placeholders (`{{…}}`, `REPLACE_ME`, `Describe what/the …`,
+   `your-name/trek-plugin`), and **every declared permission string must appear
+   in the README**. See [references/publishing.md](references/publishing.md).
 8. **`docs/` is not shipped** in `plugin.zip` (by design). Commit
    `docs/screenshot.png` to the repo — the store fetches it from GitHub at the
    pinned commit.
@@ -110,8 +117,9 @@ but is **not yet consumed by the host** — the runtime only invokes `onLoad`,
     differently-keyed update is refused until an admin re-trusts it. Back up
     `~/.trek-plugin/signing.key`.
 12. **Manifest `routes[]` and `capabilities.nav` are declarative only.** The
-    host reads real routes/jobs off the loaded `definePlugin` object, and a
-    page's nav entry comes from top-level `name` + `icon`.
+    host reads real routes off the loaded `definePlugin` object; a page's nav
+    entry uses top-level `name` as its label but a **fixed `Blocks` icon** — the
+    manifest `icon` is *not* used for nav (only on the Admin/store card).
 13. **The UI frame renders no bundled or external images/fonts.** It runs at an
     opaque origin under a strict CSP (`img-src 'self' data: blob:`,
     `font-src 'self' data:`) where `'self'` matches nothing — so relative file
@@ -132,19 +140,36 @@ but is **not yet consumed by the host** — the runtime only invokes `onLoad`,
 - UI iframe: opaque origin (sandbox without `allow-same-origin`), no cookies,
   no parent DOM; talks to TREK only via `postMessage` with target origin `'*'`;
   CSP `default-src 'none'`, `connect-src` limited to granted hosts.
-- Crash/hang/OOM kills only the plugin's process; TREK keeps running.
+- **(≥ 3.2.1)** the raw child↔host IPC channel is sealed before your code loads —
+  `process.send` / `process.on('message')` / `disconnect` are revoked; `ctx` is
+  the only channel in.
+- Crash/hang/OOM kills only the plugin's process; TREK keeps running. Watchdog:
+  RSS 300 MB, 192 MB heap, 30 s `onLoad`/route timeouts, 5 crashes/5 min →
+  auto-disabled (see [references/server-api.md](references/server-api.md)).
 
 ## Instance & ops facts
 
 - Plugin system is **on by default**; kill switch `TREK_PLUGINS_ENABLED=false`
   (also accepts `0`/`off`/`no`). Admin UI: **Admin → Plugins** (Installed /
-  Discover, Rescan re-reads the plugins directory).
+  Discover). **Rescan** re-reads the plugins directory and **(≥ 3.2.1)
+  force-refreshes the remote registry** (bypasses the 30-min + GitHub CDN cache,
+  so a just-merged plugin shows up immediately).
+- **(≥ 3.2.1) Sideloading:** admins can upload a plugin `.zip`/`.tar.gz` via
+  Admin → Plugins (drag-drop / Upload). It installs **inactive**, is flagged
+  **Sideloaded** (`local:upload`, unsigned, unreviewed, no auto-update), and
+  still needs activation + permission consent; same extract/manifest/native
+  guards as a registry install; ≤ 50 MB.
 - Plugin code lives in `TREK_PLUGINS_DIR` (default `<data>/plugins`), plugin
   SQLite data in `TREK_PLUGINS_DATA_DIR` (default `<data>/plugins-data`).
+  Behavior-affecting operator vars: `TREK_PLUGIN_MAX_RSS_MB` (default 300),
+  `TREK_PLUGIN_ALLOW_PRIVATE_EGRESS=on` (lifts the SSRF block on internal
+  addresses), `TREK_PLUGIN_PERMISSIONS=off` (weakens the OS fs/child sandbox),
+  `TREK_PLUGIN_REGISTRY_URL` (override registry source).
 - Installed plugins must be activated one by one; a version bump that requests
   **more** permissions requires the admin to re-approve.
-- Current plugin API: `apiVersion: 1` (`PLUGIN_API_VERSION`). Artifact limits:
-  25 MB/file, 50 MB total, 4000 zip entries.
+- Current plugin API: `apiVersion: 1` (`PLUGIN_API_VERSION`) — **not enforced at
+  install** (no version negotiation). Artifact limits: 25 MB/file, 50 MB total,
+  4000 zip entries.
 
 ## Canonical example
 
