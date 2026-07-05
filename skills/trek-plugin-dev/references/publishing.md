@@ -158,6 +158,15 @@ raster files by path, no external URLs — see
 render your inline-SVG artwork large and centred and screenshot it via the host
 harness in [testing.md](testing.md).
 
+For a **functional widget** (not a mascot), "your artwork" *is* the widget — and
+a lone widget on a blank background passes CI but fills the 16:9 card poorly
+(mostly empty). Compose the shot instead: place the widget(s) in a **titled,
+themed background** (gradient + tagline + a couple of feature pills — plain
+CSS/SVG in the harness page, which is *not* under the frame CSP), and show
+**light + dark (and, if useful, two data states) at once** via the per-iframe
+multi-context recipe in [testing.md](testing.md#one-screenshot-multiple-themesstates).
+Keep the composition centred for the card crop.
+
 ## Signing (optional, recommended)
 
 `sha256` proves the registry-vouched bytes; a signature additionally proves
