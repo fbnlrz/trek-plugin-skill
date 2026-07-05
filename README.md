@@ -40,27 +40,68 @@ skills/trek-plugin-dev/
 
 ## Install
 
-**As a Claude Code plugin** (recommended):
+### Local — CLI, Desktop, or IDE
+
+The interactive `/plugin` command works in the local Claude Code CLI, the
+Desktop app, and the IDE extensions:
 
 ```
 /plugin marketplace add fbnlrz/trek-plugin-skill
 /plugin install trek-plugin-dev@trek-plugin-skill
 ```
 
-**As a plain skill** — copy the folder into your project or user skills
-directory:
+### Claude Code on the web (claude.ai/code)
 
-```bash
-# project-level
-cp -r skills/trek-plugin-dev /path/to/project/.claude/skills/
+`/plugin` is **not available in web sessions** (it opens an interactive picker).
+On the web you enable the skill through repo config instead — pick one:
 
-# user-level
-cp -r skills/trek-plugin-dev ~/.claude/skills/
+**Option A — declare the marketplace in your repo** (recommended; auto-loads for
+every web session on that repo). Commit `.claude/settings.json` to the **repo you
+run web sessions on** (e.g. your `trek-plugin-<id>` repo):
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "trek-plugin-skill": {
+      "source": { "source": "github", "repo": "fbnlrz/trek-plugin-skill" }
+    }
+  },
+  "enabledPlugins": ["trek-plugin-dev@trek-plugin-skill"]
+}
 ```
 
-The skill triggers automatically when a task involves TREK plugins,
-`trek-plugin-sdk`, `trek-plugin.json`, or the TREK-Plugins registry — or
-invoke it explicitly with `/trek-plugin-dev`.
+The `enabledPlugins` entry is `<plugin>@<marketplace-key>`, so it must match the
+key you used under `extraKnownMarketplaces`.
+
+**Option B — vendor the skill into your repo** (simplest, no marketplace).
+Copy the skill folder into the repo you work on; web sessions auto-load
+`.claude/skills/**/SKILL.md`:
+
+```bash
+cp -r skills/trek-plugin-dev /path/to/your-repo/.claude/skills/
+```
+
+Web caveats: the session's network access must be **Trusted** or **Full** so it
+can reach `github.com`; the marketplace must be on the repo's **default branch**
+(it is — `main`); **user-scoped** plugins (`~/.claude/settings.json`) do *not*
+carry into web sessions, so declare them in the **repo's** `.claude/settings.json`;
+and start a **new** web session after committing config (resuming reuses cached
+config). Docs:
+[Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web) ·
+[Discover plugins](https://code.claude.com/docs/en/discover-plugins).
+
+### Plain skill (any Claude Code)
+
+Or just copy the folder into a project or your user skills directory:
+
+```bash
+cp -r skills/trek-plugin-dev /path/to/project/.claude/skills/   # project
+cp -r skills/trek-plugin-dev ~/.claude/skills/                  # user (local only)
+```
+
+However you install it, the skill triggers automatically when a task involves
+TREK plugins, `trek-plugin-sdk`, `trek-plugin.json`, or the TREK-Plugins
+registry — or invoke it explicitly with `/trek-plugin-dev`.
 
 ## Sources
 
