@@ -65,6 +65,12 @@ widget stays stuck in its loading state. Build the small host harness below to
 drive it. (The harness is also the basis for the composed store image — see
 [store-shot.html](../assets/store-shot.html) — which `/preview` does not produce.)
 
+> **Show the draft, don't describe it.** As soon as a page/widget UI first
+> renders, screenshot it (both light and dark) via `/preview` or the harness
+> below and **show the user for sign-off** before polishing — the UI is
+> subjective, so get their "looks right" before investing further. Chromium is
+> preinstalled; `page.screenshot(...)` the frame.
+
 To exercise the full UI loop — and to capture a real `docs/screenshot.png` —
 wrap the frame in a tiny host harness that speaks the bridge and proxies invokes
 to the dev API:

@@ -57,6 +57,25 @@ Update flow: bump `version` in the manifest, re-pack, new `vX.Y.Z` tag/release,
 then `entry --merge` onto the existing registry file (newest version first) and
 PR it — see [references/publishing.md](references/publishing.md).
 
+## Show the first UI draft for sign-off
+
+For a `page`/`widget` plugin the UI is subjective — **don't guess whether it
+looks right, and don't just describe it in words.** As soon as the first draft
+renders, **capture a screenshot and show it to the user for approval** before
+polishing or publishing:
+
+- Drive it headlessly — Chromium/Playwright is preinstalled in Claude Code
+  environments. Screenshot **both light and dark** so they can judge theme
+  support.
+- **≥ SDK 1.3.0:** open `dev`'s themed **`/preview`** and toggle light/dark/accent.
+- **Otherwise, or for a composed shot:** use the host harness or the ready-made
+  [`assets/store-shot.html`](assets/store-shot.html) (both themes side by side).
+- Present the image(s), ask *"does this look right?"*, and iterate on their
+  answer. Once approved, the same shot doubles as the store `docs/screenshot.png`.
+
+Get the same visual sign-off on the store preview image before it ships. See
+[references/testing.md](references/testing.md).
+
 ## Choosing the plugin type
 
 | `type` | Surfaces | Use for |
