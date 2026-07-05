@@ -1,0 +1,12 @@
+{
+  "name": "trek-plugin-dev",
+  "description": "Agent skill for building, testing, and publishing TREK plugins (trek-plugin-sdk, trek-plugin.json, sandboxed runtime, TREK-Plugins registry and its CI gates).",
+  "version": "1.0.0",
+  "author": {
+    "name": "fbnlrz"
+  },
+  "homepage": "https://github.com/fbnlrz/trek-plugin-skill",
+  "repository": "https://github.com/fbnlrz/trek-plugin-skill",
+  "license": "MIT",
+  "keywords": ["trek", "plugin", "skill", "trek-plugin-sdk"]
+}

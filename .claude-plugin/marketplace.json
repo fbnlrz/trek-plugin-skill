@@ -1,0 +1,13 @@
+{
+  "name": "trek-plugin-skill",
+  "owner": {
+    "name": "fbnlrz"
+  },
+  "plugins": [
+    {
+      "name": "trek-plugin-dev",
+      "source": "./",
+      "description": "Build, test, and publish TREK plugins: manifest, definePlugin server API, iframe bridge, permissions/egress, trek-plugin CLI, and the TREK-Plugins registry with all CI gates."
+    }
+  ]
+}
