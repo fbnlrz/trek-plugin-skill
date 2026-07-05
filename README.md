@@ -103,6 +103,50 @@ However you install it, the skill triggers automatically when a task involves
 TREK plugins, `trek-plugin-sdk`, `trek-plugin.json`, or the TREK-Plugins
 registry — or invoke it explicitly with `/trek-plugin-dev`.
 
+## Updating
+
+This plugin is intentionally **unversioned** (its `plugin.json` has no `version`
+field), so Claude Code resolves its version from the git commit — **every new
+session installs the latest `main`**. You don't bump anything to get updates.
+
+### On the web (claude.ai/code)
+
+- **Just start a new cloud session.** A new session re-clones the repo and
+  re-installs plugins from the marketplace at startup, picking up the latest
+  commit. **Resuming** an existing session does *not* refresh — it keeps the
+  plugins from that session's original start. There is no mid-session refresh
+  (`/plugin` and `/reload-plugins` are interactive, so unavailable on the web).
+- If you **vendored** the skill into `.claude/skills/` (Option B), update by
+  replacing the files, committing to the default branch, and starting a new
+  session — the fresh clone carries the new `SKILL.md`.
+- **Want stability instead of latest?** Pin the marketplace source to a tag or
+  branch in your `.claude/settings.json`, and bump the `ref` when you want the
+  update:
+
+  ```json
+  {
+    "extraKnownMarketplaces": {
+      "trek-plugin-skill": {
+        "source": { "source": "github", "repo": "fbnlrz/trek-plugin-skill", "ref": "v1.2.0" }
+      }
+    },
+    "enabledPlugins": ["trek-plugin-dev@trek-plugin-skill"]
+  }
+  ```
+
+### Local (CLI / Desktop / IDE)
+
+```
+/plugin marketplace update trek-plugin-skill    # refresh the marketplace
+/plugin update trek-plugin-dev@trek-plugin-skill
+```
+
+> **Maintainer note:** because there is no `version` field, pushing to `main`
+> ships to everyone on their next session. If you fork this and prefer pinned
+> semver releases, add a `version` to `.claude-plugin/plugin.json` and **bump it
+> on every release** — Claude Code caches a plugin whose version string didn't
+> change, so an un-bumped version silently withholds updates.
+
 ## Sources
 
 Built from the primary sources (July 2026): the
