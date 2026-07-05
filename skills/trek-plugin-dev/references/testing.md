@@ -44,16 +44,26 @@ Fidelity details:
 
 ## Previewing the UI with an emulated host
 
-The dev server exposes three URLs: `/` (a dashboard listing your routes), `/ui`
-(your `client/index.html`, served with a 1s-poll **live-reload script injected**
-before `</body>` — other assets are byte-verbatim), and `/api/<path>` (your
-routes). Crucially,
-**nothing answers the postMessage bridge**: open `/ui` directly and no parent
-replies to `trek:ready` / `trek:invoke`, so a widget that fetches its state on
-boot stays stuck in its loading state and never receives `trek:context`
-(theme/locale). The dev server also sets **no CSP and no sandbox**, so `/ui`
-is *not* a faithful preview of the real frame (see the CSP caveat in
+The dev server exposes: `/` (a dashboard listing your routes), `/ui` (your
+`client/index.html` — live-reload injected, and on **≥ SDK 1.3.0** the
+`<!-- trek:ui -->` marker expanded; other assets byte-verbatim), `/api/<path>`
+(your routes), and — **≥ SDK 1.3.0** — **`/preview`**: a **themed host** that
+embeds `/ui` in a sandboxed opaque-origin iframe (exactly TREK's isolation) and
+speaks the full bridge — it posts `trek:context` with **light/dark + accent +
+appearance toggles**, proxies `trek:invoke` to `/api`, and handles
+resize/notify/navigate. So on ≥1.3.0 you preview the themed UI **without any
+harness** — just open `/preview`.
+
+`/preview` still sets **no CSP** (like `/ui`), so it reproduces the sandbox +
+bridge + theming but **not** the per-plugin CSP — validate image/font choices
+against the real frame (see the CSP caveat in
 [client-bridge.md](client-bridge.md)).
+
+**On older SDKs (≤1.2.1)** there is no `/preview` and **nothing answers the
+bridge**: open `/ui` and no parent replies to `trek:ready`/`trek:invoke`, so a
+widget stays stuck in its loading state. Build the small host harness below to
+drive it. (The harness is also the basis for the composed store image — see
+[store-shot.html](../assets/store-shot.html) — which `/preview` does not produce.)
 
 To exercise the full UI loop — and to capture a real `docs/screenshot.png` —
 wrap the frame in a tiny host harness that speaks the bridge and proxies invokes
