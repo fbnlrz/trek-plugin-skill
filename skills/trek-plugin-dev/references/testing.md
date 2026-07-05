@@ -82,10 +82,68 @@ to the dev API:
 </script>
 ```
 
-Serve the harness from the same origin as the dev server (or enable CORS) so the
-`fetch` isn't blocked. This renders the widget with live data and is how you
-produce a faithful screenshot — but it does **not** apply the production CSP, so
-still validate image/font choices against the real frame.
+**Simplest same-origin setup:** save the harness as **`client/harness.html`** —
+`dev` serves the whole `client/` tree under `/ui/` (`/ui/<file>` →
+`client/<file>`), so it's reachable at `http://localhost:4317/ui/harness.html`,
+same-origin with `/api/…` (no CORS; `fetch('/api/state')` just works). ⚠️
+**Delete it before `pack`** — `pack` zips the entire `client/` tree, so a stray
+`harness.html` ships inside `plugin.zip`.
+
+This renders the widget with live data and is how you produce a faithful
+`docs/screenshot.png` — but it does **not** apply the production CSP, so still
+validate image/font choices against the real frame.
+
+### One screenshot, multiple themes/states
+
+The harness page is a plain page you screenshot — **not** a plugin frame — so
+it's free of the production CSP and can use gradients, layout, and several
+frames. To show light + dark (or e.g. healthy vs. low-balance) **side by side in
+one image**, mount several `<iframe src="/ui">` and give **each its own
+context**, keyed by `e.source` (each iframe's `contentWindow` is a distinct
+`e.source`):
+
+```js
+const frames = new Map()   // e.source -> { theme, state }
+function register(iframe, cfg) { frames.set(iframe.contentWindow, cfg) }
+addEventListener('message', (e) => {
+  const cfg = frames.get(e.source); if (!cfg) return
+  const m = e.data
+  if (m.type === 'trek:ready' || m.type === 'trek:context:request') {
+    e.source.postMessage({ type: 'trek:context', tripId: 1, userId: '1',
+      theme: cfg.theme, locale: 'en', hostOrigin: '*' }, '*')
+  } else if (m.type === 'trek:invoke') {
+    e.source.postMessage({ type: 'trek:response', requestId: m.requestId,
+      data: cfg.state }, '*')          // per-frame mocked state
+  }
+})
+// register(document.getElementById('light'), { theme:'light', state:{…} })
+// register(document.getElementById('dark'),  { theme:'dark',  state:{…} })
+```
+
+Then `page.screenshot({ path })` at a 1600×900 viewport (`deviceScaleFactor 1`).
+Keep key content centred so the 16:10 discover-card crop never clips it (see
+[publishing.md](publishing.md)).
+
+**Composition template (1600×900)** — treat it as a marketing shot, not a raw
+frame grab:
+
+- a soft **full-bleed background** — a subtle gradient in the plugin's accent, or
+  TREK's `--bg-secondary`;
+- a centred **title band**: the plugin **name** + a one-line tagline (system
+  font, `--text-primary` / `--text-muted`);
+- the widget in **both themes**, two "cards" side by side — here you *may* draw
+  TREK-style card chrome (`--bg-card`, `1px solid --border-faint`, `--radius-lg`,
+  `--shadow-card`) around each `<iframe>`, because this is the presentation image,
+  **not** the real in-TREK render (where the host draws the card and your widget
+  stays chrome-free — see [client-bridge.md](client-bridge.md) §5);
+- optional row of 3–4 **feature pills** (rounded `--bg-hover` chips, `--text-muted`)
+  beneath the cards;
+- keep the whole composition inside the centre ~1000px so the 16:10 crop never
+  clips the title or a card.
+
+The light+dark pair reads as a real product card and signals theme support at a
+glance. Swap each frame's mocked `state` (e.g. healthy vs. alert) to also show
+the widget *doing something*, not just sitting idle.
 
 ## `createMockHost` — unit tests
 
