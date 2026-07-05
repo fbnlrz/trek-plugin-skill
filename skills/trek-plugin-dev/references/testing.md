@@ -124,6 +124,27 @@ Then `page.screenshot({ path })` at a 1600×900 viewport (`deviceScaleFactor 1`)
 Keep key content centred so the 16:10 discover-card crop never clips it (see
 [publishing.md](publishing.md)).
 
+**Composition template (1600×900)** — treat it as a marketing shot, not a raw
+frame grab:
+
+- a soft **full-bleed background** — a subtle gradient in the plugin's accent, or
+  TREK's `--bg-secondary`;
+- a centred **title band**: the plugin **name** + a one-line tagline (system
+  font, `--text-primary` / `--text-muted`);
+- the widget in **both themes**, two "cards" side by side — here you *may* draw
+  TREK-style card chrome (`--bg-card`, `1px solid --border-faint`, `--radius-lg`,
+  `--shadow-card`) around each `<iframe>`, because this is the presentation image,
+  **not** the real in-TREK render (where the host draws the card and your widget
+  stays chrome-free — see [client-bridge.md](client-bridge.md) §5);
+- optional row of 3–4 **feature pills** (rounded `--bg-hover` chips, `--text-muted`)
+  beneath the cards;
+- keep the whole composition inside the centre ~1000px so the 16:10 crop never
+  clips the title or a card.
+
+The light+dark pair reads as a real product card and signals theme support at a
+glance. Swap each frame's mocked `state` (e.g. healthy vs. alert) to also show
+the widget *doing something*, not just sitting idle.
+
 ## `createMockHost` — unit tests
 
 Import from **`trek-plugin-sdk/testing`**. The mock enforces the **same**
