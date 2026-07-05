@@ -11,17 +11,35 @@ npx trek-plugin-sdk <command> [args]
 
 | Command | Needs | What it does |
 |---|---|---|
-| `create [name] [--type t] [--interactive]` | — | Scaffold a plugin. No name (or `--interactive`) → interactive wizard (id, type, author, permissions). With a name: `--type integration\|page\|widget`. |
-| `dev [dir]` | — | Local dev server at `http://localhost:4317` with hot reload, SDK injection, permission-enforcing `ctx`. See [testing.md](testing.md). |
+| `create [name] [--type t] [--author x] [--description x] [--permissions "a,b"] [--interactive]` | — | Scaffold a plugin. No name (or `--interactive`) → a **Clack wizard** (id, **location**, type, author, **description**, multiselect permissions, and — if `http:outbound` is picked — **egress hosts**), then offers `git init` + `npm install`. With a name it's non-interactive and still requires the name. |
+| `dev [dir] [--port 4317]` | — | Local dev server (default `http://localhost:4317`) with hot reload, SDK injection, permission-enforcing `ctx`. See [testing.md](testing.md). |
 | `validate [dir]` | — | Manifest + layout checks (same manifest rules as the install loader). Fails on invalid `trek-plugin.json`, missing `README.md`, or missing `server/index.js`; warns if dir name ≠ id, README lacks a screenshot, or scaffold placeholders remain. Since `pack` validates first, a missing README also fails `pack`. **Subset of CI** — CI additionally verifies release/sha256/README over the network. |
 | `pack [dir] [--out plugin.zip] [--json]` | — | Validates, then builds `plugin.zip` in the installer's exact layout; prints **sha256 + byte size**. `--json` for machine-readable output. |
-| `entry --repo <owner/name> --tag <vX.Y.Z> [--zip plugin.zip] [--commit <sha>] [--asset <name>] [--merge <entry.json>] [--out <file>]` | git | Emits the ready-to-PR registry entry: resolves `commitSha` from the tag (`git rev-parse <tag>^{commit}`), fills `downloadUrl`, `sha256`, `size`, `apiVersion`, and `minTrekVersion` (lower bound of the manifest's `trek` range). `--merge` prepends the new version onto an existing entry (update case, newest-first). |
-| `release [dir] --repo <o/n> --tag <vX.Y.Z> [--out] [--notes] [--commit] [--merge] [--sign]` | git + `gh` (authed) | One shot: `pack` → `gh release create` (uploads the zip) → prints the entry. |
-| `preflight --repo <o/n> --tag <vX.Y.Z> [--entry <file.json>]` | network | Runs the **full registry CI locally**: tag→commit resolution, manifest parity at that commit, artifact sha256 + size, native-binary scan, README quality gate. Green preflight ⇒ green CI. |
-| `submit --repo <o/n> --tag <vX.Y.Z> [--draft] [--registry <owner/name>] [--sign]` | `gh` (authed) | Forks TREK-Plugins (once), branches off `main`, writes/merges `registry/plugins/<id>.json`, pushes, opens the PR, prints its URL. |
-| `publish --repo <o/n> --tag <vX.Y.Z> [--sign]` | git + `gh` (authed) | **The one-command release:** pack → tag + GitHub release → preflight → registry PR. Stops *before* submitting if preflight fails, so a broken entry never becomes a doomed PR. |
-| `keygen` | — | Creates a dependency-free Ed25519 signing key at `~/.trek-plugin/signing.key` (back it up!). |
-| `sign` / `--sign` on `entry`/`release`/`submit`/`publish` | key | Signs the exact artifact bytes; fills `authorPublicKey` (entry) + `signature` (version). `submit --sign` refuses an update signed with a different key than the one already listed. |
+| `entry [dir] --repo <owner/name> --tag <vX.Y.Z> [--dir d] [--zip plugin.zip] [--commit <sha>] [--asset <name>] [--merge <entry.json>] [--out <file>] [--sign [key]]` | git | Emits the ready-to-PR registry entry: resolves `commitSha` from the tag (`git rev-parse <tag>^{commit}`), fills `downloadUrl`, `sha256`, `size`, `apiVersion`, `minTrekVersion`. `--merge` prepends the new version (newest-first) and refuses a key switch / unsigned update to a signed plugin. |
+| `release [dir] --repo <o/n> --tag <vX.Y.Z> [--out] [--notes] [--commit] [--merge] [--sign [key]]` | git + `gh` (authed) | One shot: `pack` → `gh release create` (uploads the zip) → prints the entry. |
+| `preflight [dir] --repo <o/n> --tag <vX.Y.Z> [--all] [--entry <file.json>] [--zip] [--commit] [--sign]` | network | Runs the **full registry CI locally**: tag→commit, manifest parity, artifact sha256 + size, native scan, README gate. **Default checks only the newest version; `--all` checks every `versions[]`.** Green preflight ⇒ green CI. |
+| `submit --repo <o/n> --tag <vX.Y.Z> [--branch <name>] [--keep] [--draft] [--registry <owner/name>] [--zip] [--commit] [--sign [key]]` | `gh` (authed) | Forks TREK-Plugins (once), branches (`plugin-<id>-<version>` unless `--branch`), writes/merges the entry, pushes, opens the PR. `--keep` keeps the temp clone dir. |
+| `publish --repo <o/n> --tag <vX.Y.Z> [--sign [key]] [--no-preflight] [--draft] [--registry <owner/name>] [--notes <text>]` | git + `gh` (authed) | **One-command release:** pack → tag + GitHub release → preflight → registry PR. Stops before submitting if preflight fails — **`--no-preflight` skips that safety gate** (don't). |
+| `keygen [--key <file>]` | — | Creates a dependency-free Ed25519 signing key (default `~/.trek-plugin/signing.key`; back it up!). |
+| `sign [zip] [--key <file>]` | key | **Prints** `signature` + `authorPublicKey` for an artifact (default `plugin.zip`) — does **not** modify any entry. |
+
+`--sign [key]` on `entry`/`release`/`submit`/`publish` is what actually **writes**
+`authorPublicKey` + `signature` into the generated entry (default key
+`~/.trek-plugin/signing.key`, or an inline path / `--key`). `submit`/`entry
+--merge` refuse a *different* key or an *unsigned* update to a signed plugin.
+
+## Interactive mode (SDK ≥ 1.3.0 / TREK ≥ 3.2.1)
+
+Running `npx trek-plugin-sdk` with **no command** in a terminal opens a menu
+(Create / dev / validate / pack / publish, plus an **Advanced…** submenu for
+keygen/sign/entry/preflight/submit/release). Any command missing required args
+(`--repo`/`--tag`) now **prompts** for them instead of erroring, and
+`publish`/`submit`/`release` show a confirm before the release/PR. This is purely
+additive: in non-interactive contexts (CI, pipes, or when a command is given)
+behavior is unchanged and **all prompts/decoration go to stderr**, so stdout
+stays a clean data channel (`entry` JSON, `pack --json`, PR URLs stay pipeable
+and byte-identical). Adds a build-time `@clack/prompts` dep (not shipped in
+plugins).
 
 ## `pack` details (also enforced at install and in CI)
 

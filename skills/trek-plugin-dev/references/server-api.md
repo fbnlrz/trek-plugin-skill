@@ -9,7 +9,8 @@ process; everything reaches TREK through the `ctx` argument over RPC.
 const { definePlugin } = require('trek-plugin-sdk')   // injected at runtime — devDependency only!
 
 module.exports = definePlugin({
-  // Runs once on activation. NO user context: ctx.trips.* is refused here.
+  // Runs once on activation. NO acting user here: ctx.trips/users/ws are refused.
+  // Must finish within 30s or activation fails and the child is killed.
   async onLoad(ctx) {
     await ctx.db.migrate('001_init',
       'CREATE TABLE IF NOT EXISTS cache (k TEXT PRIMARY KEY, v TEXT)')
@@ -19,7 +20,7 @@ module.exports = definePlugin({
   // Runs once on deactivation/stop — flush or release resources.
   async onUnload(ctx) { ctx.log.info('unloading') },
 
-  // HTTP routes, mounted at /api/plugins/<id><path>.
+  // HTTP routes, mounted at /api/plugins/<id><path>. Exact-path match, 30s timeout.
   routes: [
     { method: 'GET', path: '/status', auth: true,
       async handler(req, ctx) {
@@ -32,7 +33,7 @@ module.exports = definePlugin({
       } },
   ],
 
-  // Cron jobs — TREK owns the schedule. NO user context.
+  // Cron jobs — DECLARED but NOT run by the server in TREK 3.2.0/3.2.1 (see below).
   jobs: [
     { id: 'refresh', schedule: '*/15 * * * *', async handler(ctx) { /* … */ } },
   ],
@@ -43,6 +44,15 @@ The routes and job ids on the **loaded definition are authoritative** (a
 route's array index is its internal id); the `routes` block in the manifest is
 never consumed.
 
+> ⚠️ **`jobs[]` are not scheduled in TREK 3.2.0 / 3.2.1.** The child *can* handle
+> an `invoke.job`, but **nothing in the server ever sends one** — there is no
+> cron runner wiring plugin jobs (`plugins.module.ts`, `scheduler.ts` schedule
+> only core tasks; the sole `invoke.job` reference is the child handler in
+> `runtime/plugin-host-entry.ts`). A declared `schedule` is parsed and reported
+> but the handler **never fires**. Do **not** rely on `jobs` for periodic work:
+> drive it from a route your own client polls, or an external trigger hitting an
+> `auth:false` route.
+
 ## Type surface (from `trek-plugin-sdk`)
 
 ```ts
@@ -52,59 +62,39 @@ export interface PluginDefinition {
   onLoad?(ctx: PluginContext): Promise<void> | void;
   onUnload?(ctx: PluginContext): Promise<void> | void;
   routes?: PluginRoute[];
-  jobs?: PluginJob[];
-  hooks?: { photoProvider?: PhotoProvider; calendarSource?: CalendarSource }; // reserved — host does not call these yet
+  jobs?: PluginJob[];               // declared but not scheduled (see above)
+  hooks?: { photoProvider?: PhotoProvider; calendarSource?: CalendarSource }; // reserved — host does not call these
 }
 
 export interface PluginRoute {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-  path: string;
-  auth?: boolean;               // default true; false for OAuth callbacks/webhooks
+  path: string;                     // matched EXACTLY (no :params, no wildcards)
+  auth?: boolean;                   // default true; false for OAuth callbacks/webhooks
   handler(req: PluginRequest, ctx: PluginContext): Promise<PluginResponse>;
 }
 
 export interface PluginRequest {
-  method: string;
-  path: string;
-  query: Record<string, unknown>;
-  body: unknown;
+  method: string; path: string;
+  query: Record<string, unknown>; body: unknown;
   user: { id: number; username: string; isAdmin: boolean } | null;
 }
-export interface PluginResponse {
-  status: number;
-  headers?: Record<string, string>;
-  body?: unknown;
-}
-
-export interface PluginJob {
-  id: string;
-  schedule: string;             // cron expression; the host owns the schedule
-  handler(ctx: PluginContext): Promise<void>;
-}
+export interface PluginResponse { status: number; headers?: Record<string, string>; body?: unknown; }
 
 export interface PluginContext {
-  readonly id: string;                                   // your plugin id
-  readonly config: Readonly<Record<string, unknown>>;    // resolved settings (secrets decrypted)
+  readonly id: string;
+  readonly config: Readonly<Record<string, unknown>>;    // instance-scoped, frozen at activation
   db: {
     query<T = unknown>(sql: string, ...args: unknown[]): Promise<T[]>;
     exec(sql: string, ...args: unknown[]): Promise<{ changes: number }>;
     migrate(id: string, sql: string): Promise<{ applied: boolean }>;
   };
-  trips: {
-    getById(tripId: number, asUserId: number): Promise<unknown>;
-    getPlaces(tripId: number, asUserId: number): Promise<unknown[]>;
-    getReservations(tripId: number, asUserId: number): Promise<unknown[]>;
-  };
+  trips: { getById(tripId, asUserId): Promise<unknown>; getPlaces(...): …; getReservations(...): … };
   users: { getById(id: number): Promise<unknown> };
   ws: {
-    broadcastToTrip(tripId: number, event: string, data: Record<string, unknown>): Promise<void>;
-    broadcastToUser(userId: number, event: string, data: Record<string, unknown>): Promise<void>;
+    broadcastToTrip(tripId: number, event: string, data): Promise<void>;
+    broadcastToUser(userId: number, event: string, data): Promise<void>;
   };
-  log: {
-    info(msg: string, meta?: Record<string, unknown>): void;
-    warn(msg: string, meta?: Record<string, unknown>): void;
-    error(msg: string, meta?: Record<string, unknown>): void;
-  };
+  log: { info(msg, meta?): void; warn(msg, meta?): void; error(msg, meta?): void };
 }
 ```
 
@@ -112,48 +102,95 @@ export interface PluginContext {
 
 | Area | Behavior | Requires |
 |---|---|---|
-| `ctx.db` | Your **own** SQLite file (never `trek.db`). `migrate(id, sql)` runs a keyed, idempotent migration once per id — use for `CREATE TABLE`. `ATTACH`/`DETACH`/`VACUUM`/`PRAGMA` refused. | `db:own` |
-| `ctx.trips` | Read-only; **route handlers only**. The host binds the acting user from the authenticated request and membership-checks every read. The `asUserId` parameter exists for source compatibility but is **ignored by the host** — you cannot impersonate. From `onLoad`/`jobs` (no user): `RESOURCE_FORBIDDEN`. | `db:read:trips` |
-| `ctx.users.getById` | Public profile only: `id, username, display_name, avatar`. Never hashes/tokens/secrets. | `db:read:users` |
-| `ctx.ws.broadcastToTrip` | Real-time event to a trip's members; event name forced to `plugin:<id>:<event>` (cannot forge core events). | `ws:broadcast:trip` |
-| `ctx.ws.broadcastToUser` | Same, to one user's connections. | `ws:broadcast:user` |
-| `ctx.config` | Frozen object of resolved settings; `secret: true` values arrive decrypted (server-side only). | — |
-| `ctx.log` | Goes to the plugin's error log in the admin panel. | — |
-| `ctx.id` | Your plugin id. | — |
+| `ctx.db` | Your **own** SQLite file (never `trek.db`). `migrate(id, sql)` runs a keyed, idempotent migration once per id. Refused SQL: `ATTACH` / `DETACH` / `VACUUM` / `PRAGMA` / **`RECURSIVE`**. **Caps:** DB ≤ **256 MB** (further writes fail `SQLITE_FULL`), a single `query` returns ≤ **100 000 rows**, SQL text ≤ **100 000 chars**. | `db:own` |
+| `ctx.trips` | Read-only; **route handlers only**. The host binds the acting user from the request and membership-checks every read. `asUserId` is **ignored** (can't impersonate). From `onLoad`/`jobs` (no user) → `RESOURCE_FORBIDDEN`. | `db:read:trips` |
+| `ctx.users.getById` | **Route handlers only** (needs acting user). Returns **only the acting user themselves or a user who co-members a trip with them** (`id, username, display_name, avatar`) — **not** a free lookup of any account by id; others → `RESOURCE_FORBIDDEN`. | `db:read:users` |
+| `ctx.ws.broadcastToTrip` | **Route handlers only.** The acting user must be a member of the target trip. Event to the **core TREK app's** trip-room clients as `plugin:<id>:<event>`. | `ws:broadcast:trip` |
+| `ctx.ws.broadcastToUser` | **Route handlers only.** Target **must equal the acting user** (`userId === req.user.id`) — you can only push to the acting user's **own** connections. Event to core clients as `{ type: 'plugin:<id>', event, ...data }`. | `ws:broadcast:user` |
+| `ctx.config` | **Instance-scoped** settings, decrypted and **frozen at activation** (`secret:true` arrive decrypted, server-side only). Not per-user; not hot-reloaded — change requires deactivate→activate. `scope:user` settings are **not** surfaced here in 3.2.0. | — |
+| `ctx.log` | `info`/`warn`/`error` → the plugin's error log in Admin → Plugins. | — |
+| `ctx.id` | Your plugin id (also in `process.env.TREK_PLUGIN_ID`). | — |
 
-**Error codes** (thrown across RPC): `PERMISSION_DENIED` (manifest didn't
-grant the capability), `UNKNOWN_METHOD` (host doesn't expose the method),
-`RESOURCE_FORBIDDEN` (membership check failed / no user context).
+> **`ctx.ws.broadcast*` never reaches your own plugin UI.** Broadcasts go to the
+> **core TREK app's** WebSocket clients; there is no path forwarding
+> `plugin:<id>:*` events into your sandboxed iframe (the frame can't open the
+> credentialed `/ws`, and the bridge only relays `trek:context`/`trek:response`/
+> `trek:error`). For your widget/page to reflect live state, **poll your own
+> route via `trek:invoke`**. `ws:broadcast:*` is only useful to drive parts of
+> TREK that explicitly consume the event.
+
+## Error codes
+
+Seven codes cross RPC (`protocol/envelope.ts`): `PERMISSION_DENIED` (permission
+not granted), `UNKNOWN_METHOD` (no such host method), `BAD_PARAMS` (wrong
+argument type, e.g. non-numeric `tripId`), `RESOURCE_FORBIDDEN` (no acting user
+/ membership check failed), `TIMEOUT`, `PLUGIN_ERROR` (your handler threw →
+surfaces to the browser as **HTTP 502**), `HOST_ERROR` (host-side failure). A
+failed `ctx.*` call rejects with a JS `Error` whose **message is prefixed by the
+code**, e.g. `"PERMISSION_DENIED: …"` — catch and match on that.
 
 ## Routes
 
-- Mounted at **`/api/plugins/<id><path>`**. In the dev server they appear
-  under `/api/<path>`.
-- `auth: true` (default): `req.user` is the logged-in user; unauthenticated
-  calls get 401. `auth: false` for OAuth callbacks / webhooks.
-- The proxy forwards only `{ method, path, query, body, user }` — plugin code
-  never sees raw headers or the session cookie.
-- Return shape: `{ status, headers?, body? }`. Serialize JSON yourself and set
-  `content-type` explicitly.
+- Mounted at **`/api/plugins/<id><path>`** (dev server: `/api/<path>`). Matched
+  by **exact method + exact path** — no `:params`, no wildcards. Unknown route
+  or inactive plugin → **404**; missing auth on an `auth:true` route → **401**.
+- `auth: true` (default): `req.user` is the logged-in user. `auth: false` for
+  OAuth callbacks / webhooks.
+- The proxy forwards only `{ method, path, query, body, user }` — no raw headers,
+  no session cookie.
+- **Response constraints:** of your `headers`, only **`content-type` and
+  `cache-control`** pass through (everything else — incl. `set-cookie`, custom
+  headers — is dropped). Every reply is forced `X-Content-Type-Options: nosniff`
+  and `Content-Disposition: attachment` (it can never render as a document at
+  TREK's origin). A **3xx** is honored **only if `location` is a relative in-app
+  path** (`^/…`, not `//…`) — otherwise **502** (matters for OAuth callbacks).
+  Serialize JSON yourself.
+- Each route invocation has a **30 s** timeout (→ 502).
+
+## OAuth / settings caveats
+
+- `settings[].oauth = { initPath, callbackPath }` is **descriptive metadata
+  only** — the host stores it but does not mount or drive it (like manifest
+  `routes[]`). Implement the flow yourself with your own routes: an `auth:false`
+  callback whose redirect is a relative in-app path (see Routes).
+- Version compatibility is **not enforced at install**: the server accepts any
+  numeric `apiVersion` (never compared to `PLUGIN_API_VERSION`) and does not gate
+  on `trek`/`minTrekVersion`/`maxTrekVersion` — those are advisory (registry/CI
+  only). An incompatible plugin still installs and simply fails at runtime.
 
 ## Outbound HTTP
 
-Use the global `fetch` (Node >= 18). Every request passes the runtime egress
-guard: only hosts granted as `http:outbound:<host>` (exact or `*.suffix`
-wildcard) are reachable; private/loopback/link-local/metadata addresses are
-always refused (SSRF backstop). See the egress trap in
-[manifest.md](manifest.md).
+Use the global `fetch` (Node ≥ 18). Every request passes the runtime egress
+guard: only hosts granted as `http:outbound:<host>` (exact or `*.suffix`) are
+reachable; private/loopback/link-local/metadata addresses are refused (SSRF
+backstop) **unless** the operator sets `TREK_PLUGIN_ALLOW_PRIVATE_EGRESS=on`.
+See the egress trap in [manifest.md](manifest.md).
+
+## Runtime limits & watchdog (TREK 3.2.0)
+
+| Limit | Value | Source |
+|---|---|---|
+| RSS ceiling (SIGKILL past it) | **300 MB**, override `TREK_PLUGIN_MAX_RSS_MB` | `supervisor/plugin-supervisor.ts` |
+| V8 old-space heap | **192 MB** (`--max-old-space-size=192`) | `paths.ts` |
+| Heartbeat / missed-beat kill | every **5 s** / kill after **20 s** | supervisor + host-entry |
+| `onLoad` activation timeout | **30 s** (else activation rejected, child killed) | supervisor |
+| Route invocation timeout | **30 s** (→ 502) | supervisor |
+| Crash policy | **5 crashes / 5 min → auto-disabled** (status `error`); else restart, backoff capped **30 s** | supervisor |
+| SIGTERM→SIGKILL grace | **3 s** | supervisor |
+| Artifact (install) | 25 MB/file, 50 MB total, 4000 entries | `install/safe-extract.ts` |
 
 ## What plugin code can NOT do
 
 No filesystem writes, no reading TREK's files or env secrets, no child
-processes, no worker threads, no native addons. Filesystem reads are scoped to
-the plugin's own code (Node `--permission` model). A crash/hang/OOM kills only
-the plugin's process; TREK restarts or disables it.
+processes, no worker threads, no native addons. The child env is whitelisted to
+`NODE_ENV`, `TZ`, `PATH`, `TREK_PLUGIN_ID`. **(TREK ≥ 3.2.1)** the raw child↔host
+IPC channel is sealed before your code loads — `process.send` /
+`process.on('message')` / `process.disconnect` are revoked, so there is no
+lower-level channel than `ctx`. A crash/hang/OOM kills only the plugin's process.
+(Operators can weaken the OS-level fs/child sandbox with
+`TREK_PLUGIN_PERMISSIONS=off` — don't rely on that being set.)
 
 ## Reference implementation
 
 `plugin-sdk/examples/koffi/server/index.js` (TREK repo): a single
-membership-checked `GET /state` route computing days-until-trip — note it does
-**not** use `definePlugin` (it exports a plain object, which is equivalent
-since `definePlugin` is an identity function for typing).
+membership-checked `GET /state` route computing days-until-trip.

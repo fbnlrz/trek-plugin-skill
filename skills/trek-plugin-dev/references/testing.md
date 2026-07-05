@@ -45,7 +45,9 @@ Fidelity details:
 ## Previewing the UI with an emulated host
 
 The dev server exposes three URLs: `/` (a dashboard listing your routes), `/ui`
-(your **raw** `client/index.html`), and `/api/<path>` (your routes). Crucially,
+(your `client/index.html`, served with a 1s-poll **live-reload script injected**
+before `</body>` — other assets are byte-verbatim), and `/api/<path>` (your
+routes). Crucially,
 **nothing answers the postMessage bridge**: open `/ui` directly and no parent
 replies to `trek:ready` / `trek:invoke`, so a widget that fetches its state on
 boot stays stuck in its loading state and never receives `trek:context`
@@ -140,6 +142,9 @@ Notes:
   dev server's real SQLite) for real SQL.
 - `broadcasts` collects `ws.broadcastTo*` calls so you can assert on events
   without a socket.
+- `calls` records the attempt **even when the grant is missing** (the entry is
+  pushed before the permission check throws), so a `PERMISSION_DENIED` call still
+  appears in `calls`.
 - Mock ctx id is `mock-plugin`; `config` is frozen like the real one.
 - Differences vs the real host worth knowing: the mock's `trips.getById`
   honors the `asUserId` argument for membership checks (that's the point of

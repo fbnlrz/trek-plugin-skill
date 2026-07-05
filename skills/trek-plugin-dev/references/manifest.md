@@ -12,33 +12,33 @@ registry CI, and the TREK install loader all apply the **same** rules
 | `name` | string | **yes** | Display name; also the nav label for `page` plugins. |
 | `version` | string | **yes** | Semver `\d+.\d+.\d+` with optional pre-release (`1.2.3`, `1.2.3-beta.1`). Must equal the git tag (`v` prefix) of the release. |
 | `type` | string | **yes** | `integration` \| `page` \| `widget`. |
-| `apiVersion` | number | no | Plugin API version; currently `1` (SDK constant `PLUGIN_API_VERSION`). Defaults to `1`. Must be a number, not a string. |
-| `trek` | string | no | Supported TREK semver range, e.g. `">=3.2.0 <4.0.0"`. Its lower bound becomes `minTrekVersion` in the registry entry. |
+| `apiVersion` | number | no | Plugin API version; currently `1` (SDK constant `PLUGIN_API_VERSION`). Defaults to `1`. Must be a number, not a string. **Not enforced at install** — the server accepts any numeric value with no version negotiation. |
+| `trek` | string | no | Supported TREK semver range, e.g. `">=3.2.0 <4.0.0"`. Its lower bound becomes `minTrekVersion` in the registry entry. The server does **not** gate installs on `min`/`maxTrekVersion` — advisory (registry/CI) only. |
 | `author` | string | no | Shown in the store. |
 | `description` | string | no | One-line store summary. |
-| `icon` | string | no | lucide-react icon name (default `Blocks`); used for the page nav entry. |
+| `icon` | string | no | lucide-react icon name (default `Blocks`). Shown on the **Admin → Plugins** row/store card. **Note:** a page's top-nav entry uses `name` as its label but a **fixed `Blocks` icon** in 3.2.x — the declared `icon` is *not* used for nav. |
 | `homepage` | string | no | Project URL. |
 | `license` | string | no | Shown in store detail; read, not enforced. |
 | `nativeModules` | boolean | no | Must be `false` or absent; `true` is rejected everywhere ("native modules are not allowed (v1)"). |
 | `permissions` | string[] | no | Only known permissions (below); an unknown string fails validation. |
 | `egress` | string[] | conditional | Required non-empty when any `http:outbound` permission is present. No bare `"*"`. Hosts must match the host grammar (below). |
 | `capabilities.widget` | object | no | `{ "title": string, "slot": "sidebar" \| "hero", "defaultSize": … }`. Optional even for widget plugins as far as validation goes; when present, `slot` must be `sidebar` (default) or `hero` — any other value is rejected. **Scaffold gotcha:** `create` writes `{ title, defaultSize: "medium" }` **without `slot`**, so a new widget defaults to `sidebar` — add `"slot": "hero"` yourself if you want the boarding-pass overlay. `defaultSize` is declarative only: the dashboard renders `sidebar` widgets in a **fixed ~180px, `overflow-hidden` slot** regardless, so build compact (see [server-api.md](server-api.md) / client-bridge.md). |
-| `settings` | array | no | Settings fields (below). TREK renders the form — plugins write no settings UI. |
+| `settings` | array | no | Settings fields (below). Declared here; **the SDK validator and CI do not validate `settings[]`** — the runtime host renders/enforces them. Plugins write no settings UI. |
 
 **Declarative-only keys the scaffold writes but the installed-manifest parser
 does not consume:** `routes[]` (real routes come from the loaded `definePlugin`
-object) and `capabilities.nav` (page nav is built from top-level `name` +
-`icon`).
+object) and `capabilities.nav` (a page's nav entry uses top-level `name` as its
+label; the icon is a fixed `Blocks` glyph, not the manifest `icon`).
 
 ## Permissions catalog (complete)
 
 | Permission | Grants | Notes |
 |---|---|---|
-| `db:own` | `ctx.db.query` / `exec` / `migrate` on the plugin's **own** SQLite file | Never `trek.db`. `migrate(id, sql)` is keyed + idempotent. `ATTACH`/`DETACH`/`VACUUM`/`PRAGMA` are refused. |
+| `db:own` | `ctx.db.query` / `exec` / `migrate` on the plugin's **own** SQLite file | Never `trek.db`. `migrate(id, sql)` is keyed + idempotent. Refused SQL: `ATTACH`/`DETACH`/`VACUUM`/`PRAGMA`/**`RECURSIVE`**. Caps: DB ≤ **256 MB**, `query` ≤ **100 000 rows**, SQL ≤ **100 000 chars**. |
 | `db:read:trips` | `ctx.trips.getById` / `getPlaces` / `getReservations` (read-only) | Membership-checked against the acting user; **route handlers only**. |
-| `db:read:users` | `ctx.users.getById` | Public profile only: id, username, display name, avatar. |
-| `ws:broadcast:trip` | `ctx.ws.broadcastToTrip` | Events force-namespaced `plugin:<id>:<event>`. |
-| `ws:broadcast:user` | `ctx.ws.broadcastToUser` | Same namespacing. There is **no** `ws:broadcast:*`. |
+| `db:read:users` | `ctx.users.getById` | **Route handlers only** (needs acting user). Returns only the **acting user or a trip co-member** (id, username, display_name, avatar) — not a free lookup of any account; others → `RESOURCE_FORBIDDEN`. |
+| `ws:broadcast:trip` | `ctx.ws.broadcastToTrip` | **Route handlers only**; acting user must be a trip member. Event `plugin:<id>:<event>` to the **core app's** trip clients — **not** your own iframe. |
+| `ws:broadcast:user` | `ctx.ws.broadcastToUser` | **Route handlers only**; target must equal the acting user (own connections only). Event `{ type: 'plugin:<id>', event }`. There is **no** `ws:broadcast:*`. |
 | `hook:photo-provider` | Reserved: register a `PhotoProvider` | Validates, but the host does **not** consume hooks yet. |
 | `hook:calendar-source` | Reserved: register a `CalendarSource` | Same. |
 | `http:outbound` | Marker: plugin does outbound HTTP | Satisfies the "egress required" rule but grants **no host** by itself. |
@@ -69,15 +69,18 @@ loopback/private/link-local/metadata address (SSRF backstop).
 |---|---|
 | `key` | **Required** identifier; entries with an empty key are dropped. |
 | `label` | Form label. |
-| `input_type` | **snake_case**: `text` (default), `password`, `number`, `select`, … |
+| `input_type` | **snake_case**: `text` (default), `password`, `number`, `select`, … Live form rendering is host/version-dependent — the **3.2.0 client shows only a read-only preview** (label + scope + required), no value-entry widgets; verify against your target build. |
 | `scope` | `instance` (default — set once by admin) or `user` (per-user). |
 | `required` | boolean. |
 | `secret` | boolean — encrypted at rest, decrypted only into server-side `ctx.config`, never sent to the iframe. |
 | `placeholder`, `hint` | Form hints. |
 | `options` | `[{ "value": …, "label": … }]` for `select`. |
-| `oauth` | `{ "initPath": …, "callbackPath": … }` for OAuth flows. |
+| `oauth` | `{ "initPath": …, "callbackPath": … }` — **descriptive metadata only** (like `routes[]`); the host doesn't mount or drive it. Implement the flow with your own routes (an `auth:false` callback, relative in-app redirect). |
 
-Resolved values arrive in `ctx.config` (a frozen object).
+Resolved **instance-scoped** values arrive in `ctx.config` — decrypted and
+**frozen at activation** (not per-user, not hot-reloaded; a change needs
+deactivate→activate). `scope: user` settings are **not** surfaced to server
+`ctx.config` in 3.2.0.
 
 ## Example: minimal widget with network access
 

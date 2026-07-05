@@ -39,7 +39,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
 | `type` | `integration` \| `page` \| `widget`. |
-| `authorPublicKey` | Optional base64 minisign/Ed25519 public key, 40–120 chars; stable across versions; TOFU-pinned on first install. |
+| `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |
 
@@ -58,7 +58,7 @@ Per version — required: `version`, `gitTag`, `commitSha`, `downloadUrl`,
 | `size` | Bytes, 1 … 52 428 800 (50 MB). **Required — a common omission when hand-writing.** |
 | `apiVersion` | Integer >= 1. |
 | `nativeModules` | Literally `false` (const). |
-| `signature` | Optional base64 minisign signature over the artifact bytes; requires `authorPublicKey` on the entry. |
+| `signature` | Optional base64 **raw Ed25519** signature (the 64-byte sig) over the artifact bytes; requires `authorPublicKey` on the entry. |
 | `publishedAt` | Optional ISO date-time. |
 
 `trek-plugin entry --repo <o/n> --tag <vX.Y.Z>` computes all derived fields;
@@ -70,41 +70,49 @@ keys).
 ## CI gates
 
 Every PR runs `scripts/validate-entry.mjs` and `scripts/check-readme.mjs` on
-each changed `registry/plugins/*.json`. Each is a hard gate; `preflight`
-replays all of them locally. On merge, `publish.yml` regenerates
-`dist/index.json` and stamps `reviewedAt` — **a PR must only add/change your
-one entry file, never `dist/`**.
+each changed `registry/plugins/*.json` (both on **Node 20**). Each is a hard
+gate; `preflight` replays them locally. On merge, `publish.yml` regenerates
+`dist/index.json` (plugins sorted by `id`, each `versions[]` newest-first, plus a
+`dist/index.json.sha256` sidecar) and stamps `reviewedAt` — **a PR must only
+add/change your one entry file, never `dist/`**.
 
 ### Entry gates (`validate-entry.mjs`)
+
+Runs for **every** `versions[]` entry (not just the one you add) over the
+network — re-listing with a broken *old* version can fail CI. (`SKIP_NETWORK=1`
+runs schema/format checks only.)
 
 | Gate | Fails when | Fix |
 |---|---|---|
 | JSON schema | Entry violates `plugin-entry.schema.json` (incl. unknown keys) | Regenerate with `trek-plugin entry` |
 | id ↔ filename | `id` ≠ filename or not a valid slug | Rename file / fix id |
-| Owner binding | Existing id repointed to a different owner (per `OWNERS.json`: id → `{ boundOwner, repo }`, stamped on first merge) | Only the bound owner can update; owner change needs a maintainer override |
-| Homoglyph / mixed-script | `name` uses confusable/mixed-script characters | Use plain characters |
+| Owner binding | Existing id repointed to a different owner (`OWNERS.json`: id → `{ boundOwner, repo }`, stamped on first merge) | Only the bound owner updates it; an owner change needs a maintainer to re-run CI with `ALLOW_OWNER_CHANGE=1` |
+| Homoglyph / mixed-script | `name` mixes Latin `[A-Za-z]` **with** Cyrillic (U+0400–04FF) or Greek U+0370–037F. Only fires on a *mix* — an all-Cyrillic name, or a Latin+common-Greek (Α/Ο/α…) spoof, is **not** caught | Use plain ASCII |
 | Release tag | `gitTag` doesn't exist or doesn't resolve to `commitSha` | Push the tag; re-run `entry` |
-| Manifest parity | `id`/`version`/`type`/`apiVersion` in the repo's `trek-plugin.json` **at `commitSha`** differ from the entry, or manifest has `nativeModules: true` | Align manifest and entry; retag |
-| Artifact hash/size | Downloaded release asset's SHA-256 ≠ `sha256`, or size out of bounds | Never touch released assets; cut a new version |
-| Native binary scan | `.node` binaries (or similar) inside the zip | Remove native deps; repack |
+| Manifest parity | `id`/`version`/`type`/`apiVersion`/`nativeModules` in the repo's `trek-plugin.json` **at `commitSha`** differ from the entry (or `nativeModules: true`) | Align manifest and entry; retag |
+| Artifact hash / over-size | Downloaded asset's SHA-256 ≠ `sha256`, or the bytes are **> ~4 KB larger** than declared `size` (`buf.length > size + 4096`) — no lower-bound check; the 1–50 MB range is a separate *schema* check on the declared `size` | Never touch released assets; cut a new version |
+| Native binary scan | `.node`, `binding.gyp`, or a `prebuild(s)/` path inside the artifact (**zip or tar.gz**) | Remove native deps; repack |
 | Egress | Any `http:outbound*` permission but `egress[]` missing/empty, or `egress` contains a bare `*` | Declare explicit hosts |
-| Signature | `signature` present but doesn't verify against `authorPublicKey` | Re-sign the exact artifact bytes |
 
-(The reserved ids `registry`, `install`, `rescan` are refused by **TREK's
-install loader** — they collide with admin API route segments — not by the
-registry CI script. Avoid them regardless: a listed plugin nobody can install
-is pointless.)
+**No signature gate.** `validate-entry.mjs` does **not** verify signatures — only
+the SHA-256 pin. A `signature`/`authorPublicKey` is shape-checked by the schema
+and verified by **TREK at install time (TOFU)**, not in PR CI. (The registry
+README claims it's "verified when present"; the code doesn't do it.)
+
+(Reserved ids `registry`, `install`, `rescan` are refused by **TREK's install
+loader** — they collide with admin API route segments — not by the CI script.
+Avoid them regardless.)
 
 ### README gates (`check-readme.mjs`, fetched from your repo at the pinned commit)
 
 | Gate | Requirement |
 |---|---|
 | Exists | `README.md` at the repo root |
-| Sections | Headings **What it does**, **Screenshots**, **Permissions**, **Setup** all present |
-| Screenshot | At least one image reference that **resolves to a real image** (relative paths like `docs/screenshot.png` resolved against the pinned commit) |
-| Real prose | >= 400 characters after stripping headings/code/images/tables — a template stub fails |
-| Placeholders | No leftover `{{placeholder}}` tokens from the scaffold |
-| Permission parity | **Every permission string declared in the manifest appears in the README** with an explanation |
+| Sections | Tokens **What it does**, **Screenshots**, **Permissions**, **Setup** — each matched **case-insensitively as a substring of any heading, level 1–6** (so `## Setup instructions` or `# Screenshots & demo` count) |
+| Screenshot | At least one image whose URL **resolves via a live `GET`** (first 2 KB) with HTTP `Content-Type: image/*`. **`data:` URIs are ignored** (you need a committed file, e.g. `docs/screenshot.png`); `github.com/.../blob/...` links are auto-rewritten to `raw`; relative paths resolve against the pinned commit |
+| Real prose | ≥ **400 characters** after stripping headings/code/images/tables/links/HTML comments — a template stub fails |
+| Placeholders | No leftover scaffold placeholders: `{{…}}`, `REPLACE_ME`, template prose starting `Describe what/the …`, or a literal `your-name/trek-plugin` path |
+| Permission parity | **Every permission string in the manifest appears (case-insensitive substring) in the README** — a plain substring test, not proof of a real explanation, but explain each anyway |
 
 Model README: `plugin-sdk/examples/koffi/README.md` (TREK repo) — note its
 Permissions section is a table with one row per permission explaining why.
@@ -139,28 +147,34 @@ harness in [testing.md](testing.md).
 
 `sha256` proves the registry-vouched bytes; a signature additionally proves
 **you** built them (a compromised registry can't ship attacker code under your
-name). Verified offline (minisign/Ed25519); key pinned on first install
-(trust-on-first-use).
+name). The SDK produces and TREK verifies a **bare Ed25519** key + signature —
+**not minisign's framed format**: `authorPublicKey` is base64 of the raw 32-byte
+public key, each `signature` is base64 of the raw 64-byte signature over the
+artifact bytes. Verified offline, key pinned on first install (TOFU). **Registry
+CI does not verify it — only TREK at install time does.**
 
-SDK path (no minisign needed):
+Use the SDK (do **not** hand-run `minisign` — its `.pub`/`.minisig` payloads are
+the wrong length, 42/74 bytes, and fail the SDK/server's `length === 32/64`
+checks):
 
 ```bash
 npx trek-plugin-sdk keygen        # once → ~/.trek-plugin/signing.key (BACK IT UP)
 npx trek-plugin-sdk publish --repo you/repo --tag v1.2.0 --sign
 ```
 
-Manual path: `minisign -G`, put the base64 payload of `minisign.pub` into
-`authorPublicKey`; per release `minisign -Sm plugin.zip` and put the base64
-`.minisig` payload into that version's `signature`.
+`keygen`/`sign` accept `--key <file>`; `--sign` on `entry`/`release`/`submit`/
+`publish` writes `authorPublicKey` + `signature` into the entry (the standalone
+`sign [zip]` command only **prints** them).
 
-Rules: the key must stay **stable across versions**; once a plugin has shipped
-signed, an unsigned or re-keyed update is refused until an admin explicitly
-re-trusts (`submit --sign` guards against accidental key switches). Unsigned
-plugins install on sha256 alone.
+Rules: the key must stay **stable across versions**. When merging onto an
+already-published entry, **both `entry --merge` and `submit` refuse** (a) a
+different signing key and (b) an *unsigned* update to a previously-signed plugin.
+Unsigned plugins install on sha256 alone.
 
 ## When `submit` / `publish` can't open the PR (do it by hand)
 
-The automated PR step can fail with **`error: remote upstream already exists`**.
+The automated PR step can fail with **`error: remote upstream already exists`**
+(still present as of TREK 3.2.1 / SDK 1.3.0 — `submit.ts` is unchanged).
 Cause (confirmed in `src/cli/submit.ts`): `submit` clones your fork with
 `gh repo clone`, which auto-adds an `upstream` remote for a fork, then
 unconditionally runs `git remote add upstream …` again. The **release itself is
