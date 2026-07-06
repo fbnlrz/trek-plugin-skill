@@ -55,11 +55,11 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `id` | `^[a-z][a-z0-9-]{2,39}$`; must equal the filename (without `.json`). |
 | `name` | 2–60 chars. |
 | `author` | 1–80 chars. |
-| `description` | 8–200 chars. |
+| `description` | 8–200 chars. ⚠️ **`validate`/`pack` do NOT enforce this cap** — only the registry schema does. A manifest `description` > 200 chars passes `validate`, packs, and cuts the release, then the **registry CI rejects the entry** (`description must NOT have more than 200 characters`). `buildEntry` copies the manifest description verbatim, so keep `trek-plugin.json`'s `description` ≤ 200 chars up front. |
 | `repo` | `owner/name` (GitHub). Source of truth for the code. |
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
-| `type` | `integration` \| `page` \| `widget` \| `trip-page` **(≥3.2.1)** — `trip-page` is now in the registry `main` schema's `type` enum (v3-2-1 was merged), so entries validate directly. |
+| `type` | `integration` \| `page` \| `widget` \| `trip-page` **(≥3.2.1)** — `trip-page` is in the registry `main` schema's `type` enum (v3-2-1 was merged), so the **live CI** validates it. ⚠️ **But the SDK 1.3.0 local `preflight` still rejects `trip-page`** (`preflight.ts:50` hardcodes the old 3-type list) — so `preflight`/`publish` fail on it locally even though CI would pass. Use `submit` or `publish --no-preflight` (see [cli.md](cli.md)). |
 | `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |
