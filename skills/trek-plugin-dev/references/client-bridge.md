@@ -312,10 +312,10 @@ The card itself **changed between versions**:
 Either way, keep the root chrome-free and let the host draw the card.
 
 A `page` plugin is the **opposite**: it renders in a full-page shell with **no**
-host card (`PluginPage.tsx` → `PageShell` + a `w-full h-full` frame), so you own
-the whole surface, draw your own layout, and here `trek:resize` **does** drive
-the iframe height — report it on every layout change (e.g. via `ResizeObserver`,
-capped at 2000 px):
+host card (`PluginPage.tsx` → a `calc(100vh - nav)` container + a `w-full h-full`
+frame), so you own the whole surface and draw your own layout. Here `trek:resize`
+**does** set the iframe's pixel height (`PluginFrame` applies `Math.min(height,
+2000)`), so you *can* report it on every layout change (e.g. via `ResizeObserver`):
 
 ```js
 var lastH = -1
@@ -325,6 +325,21 @@ function reportHeight(root) {
 }
 if (window.ResizeObserver) new ResizeObserver(() => reportHeight(root)).observe(root)
 ```
+
+> ⚠️ **`trip-page` — do NOT report unbounded content height.** The host mounts a
+> `trip-page` in a fixed, `position:absolute; overflow:hidden` tab wrapper sized to
+> the planner viewport (`TripPlannerPage.tsx`), and `PluginFrame` sets the iframe to
+> exactly the height you report. Report a height **taller than that viewport and the
+> excess is clipped with no scrollbar** — content past the fold is unreachable
+> (verified: source + a real instance). So for a `trip-page`, treat the frame as a
+> **fixed viewport, not a growing document**: either **don't call `trek:resize` at
+> all** (the frame stays `height:100%` of the tab — make a flex child `overflow:auto`
+> and scroll internally), or **cap the reported height to the viewport**
+> (`Math.min(contentHeight, window.innerHeight)`) and scroll your own content. The
+> unbounded-report pattern above is safe for `page` (its container can scroll) but
+> **wrong for `trip-page`**. The kit's auto-report is fine because it self-sizes to
+> what fits; the trap is a hand-rolled `ResizeObserver` reporting full document
+> height on a `trip-page`.
 
 A `hero` widget is far more constrained than the sidebar. It renders as a
 **fixed ~110px tall, `overflow:hidden`, `pointer-events:none`** transparent strip

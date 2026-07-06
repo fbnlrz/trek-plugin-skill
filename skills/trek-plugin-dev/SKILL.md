@@ -142,7 +142,12 @@ raise planner warnings (`hook:trip-warning-provider`) with no UI of its own. See
    is route-only and gated on the acting user's matching edit permission
    (`place_edit`/`day_edit`/`trip_edit`/`budget_edit`), exactly like the web UI.
    `ctx.meta` stores the plugin's own namespaced data on a trip/place/day (reads
-   need trip access, writes the entity's edit permission).
+   need trip access, writes the entity's edit permission). **Heads-up: these
+   ≥3.2.1 namespaces (`meta`/`places`/`days`/`itinerary`/`costs`/`packing`/`files`/
+   `trips.update`) are `undefined` in `trek-plugin dev` (SDK 1.3.0)** — exercise
+   them on a real instance or via `createMockHost`, not the dev server (see
+   [testing.md](references/testing.md)). Budget amount key is **`total_price`**,
+   not `amount` (unknown keys are silently dropped → saves 0).
 5. **No native modules** — `.node`, `binding.gyp`, `prebuilds/` are refused at
    pack, CI, and install time. `nativeModules` must be `false`/absent.
 6. **Git tag == manifest `version`** (`v1.2.3` ↔ `"version": "1.2.3"`), and the
