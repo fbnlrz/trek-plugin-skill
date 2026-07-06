@@ -23,6 +23,18 @@ Fidelity details:
 - The injected `ctx` **enforces exactly the permissions your manifest
   grants** — an ungranted call throws `PERMISSION_DENIED`, so you catch a
   missing grant before install.
+- ⚠️ **The dev `ctx` only implements `db`, `trips` (`getById`/`getPlaces`/
+  `getReservations`), `users`, `ws`, `log`, `config`.** As of **SDK 1.3.0**, the
+  flagship ≥3.2.1 namespaces — **`ctx.meta`, `places`, `days`, `itinerary`,
+  `costs`, `packing`, `files`, and `trips.update`** — are **NOT stubbed by
+  `trek-plugin dev`; they are `undefined`** (`cli/dev.ts` `createDevContext`). A
+  route using them throws `Cannot read properties of undefined (reading '…')`. Test
+  those flows on a **real instance**, or unit-test with `createMockHost` (which
+  *does* implement them — see below). **JS gotcha:** because the namespace is
+  `undefined`, `ctx.meta.get(…)` throws **synchronously at property access**, before
+  any Promise — a `try { await attempt(ctx.meta.get(x)) }` won't catch it (the throw
+  happens while evaluating the argument). Guard with a **thunk**: `attempt(() =>
+  ctx.meta.get(x))`, or `typeof ctx.meta === 'undefined'`.
 - `db:own` is backed by a real SQLite file at `.trek-dev/db.sqlite` when the
   Node runtime has `node:sqlite`.
 - Simulate an unauthenticated request with `?_anon=1` — an `auth: true` route
