@@ -37,13 +37,23 @@ immutable in practice; fix things in a new version.
 > Run **`git fetch origin --tags`** between the release and `entry`, or pass
 > `--commit <sha>` to override.
 
-> **Reproducible artifacts (CRLF trap):** `pack` zips your **working-tree**
-> files, so on Windows with `core.autocrlf=true` the same commit produces a
-> **different sha256 and size** than an LF checkout. Harmless as long as you
-> upload the exact zip you packed and let `entry` hash that same asset — but it
-> surprises anyone re-packing on another machine or comparing hashes. For
-> cross-platform reproducibility commit a `.gitattributes` with
-> `* text=auto eol=lf`.
+> **Artifacts are NOT byte-reproducible — take `sha256`/`size` from the
+> uploaded asset, never from a local re-pack.** `pack` output differs between
+> machines *and even SDK patch versions*: identical source packed with SDK
+> 1.3.0 vs 1.3.1 produced a different sha256 **and** size (79 918 vs 79 830 B)
+> with a correct LF `.gitattributes` in place — zip metadata/mtimes/compression,
+> not your files (confirmed on a real build). Consequences:
+>
+> 1. The registry pin must describe **the exact bytes attached to the GitHub
+>    release**: upload the zip you packed, then build the entry **after** the
+>    upload against that same artifact — or verify by hand:
+>    `curl -fsSL <downloadUrl> | sha256sum` and the asset's exact byte count.
+>    A hash from "the same source, packed again" will generally **not** match.
+> 2. Two known nondeterminism sources: **CRLF checkouts** (fix: commit a
+>    `.gitattributes` with `* text=auto eol=lf` — Windows `core.autocrlf=true`
+>    otherwise changes file bytes) and **the SDK's zip layer itself** (entry
+>    mtimes/ordering/compressor — nothing you can fix in the plugin; if two
+>    machines must agree, pin the SDK version: `npx trek-plugin-sdk@1.3.1 pack`).
 
 ## Registry entry schema (`registry/plugins/<id>.json`)
 
@@ -55,7 +65,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `id` | `^[a-z][a-z0-9-]{2,39}$`; must equal the filename (without `.json`). |
 | `name` | 2–60 chars. |
 | `author` | 1–80 chars. |
-| `description` | 8–200 chars. ⚠️ **`validate`/`pack` do NOT enforce this cap** — only the registry schema does. A manifest `description` > 200 chars passes `validate`, packs, and cuts the release, then the **registry CI rejects the entry** (`description must NOT have more than 200 characters`). `buildEntry` copies the manifest description verbatim, so keep `trek-plugin.json`'s `description` ≤ 200 chars up front. |
+| `description` | 8–200 chars — **the cap binds the *entry*, not the manifest, and the two need not match.** Manifest parity compares only `id`/`version`/`type`/`apiVersion`/`nativeModules` (+ dependency fields), never `description` — a merged entry with a short description alongside a longer manifest description is confirmed fine. ⚠️ But `buildEntry` copies the manifest description **verbatim**, and `validate`/`pack` don't enforce the cap — so a > 200-char manifest description sails through pack + release and only then **fails registry CI** (`description must NOT have more than 200 characters`). Either keep `trek-plugin.json`'s description ≤ 200 chars, or hand-shorten the entry's `description` after `entry` (allowed). |
 | `repo` | `owner/name` (GitHub). Source of truth for the code. |
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
@@ -230,6 +240,10 @@ already done** at that point — only the PR is missing. Open the one-file PR
 manually:
 
 ```bash
+# 0. The GitHub release for the tag — WITH plugin.zip attached — must already
+#    exist: `entry` verifies against the release asset and fails with
+#    "artifact not found" if the asset isn't uploaded yet. Order is always
+#    pack → release (asset attached) → entry, never entry first.
 # 1. Generate the entry INSIDE the plugin repo — `entry` resolves commitSha via
 #    `git rev-parse <tag>`, so the tag must be local here. If gh created the
 #    tag remotely, fetch it first:
@@ -267,13 +281,39 @@ Prerequisite `submit`/`publish`/`release` assume silently: **`gh` installed and
 authenticated** (`gh auth status`). A `spawnSync gh ENOENT` means `gh` isn't on
 PATH (Windows: `winget install --id GitHub.cli -e`, then reopen the shell).
 
-## Updates
+## Updating a published plugin
 
 1. Bump `version` in `trek-plugin.json`; develop; re-`pack`.
-2. New tag + release `vX.Y.Z` with the new `plugin.zip`.
+2. New tag + GitHub release `vX.Y.Z` with the new `plugin.zip` **attached before
+   anything else** — `entry` verifies the release asset and fails with
+   `artifact not found` if it doesn't exist yet.
 3. `trek-plugin entry --repo <o/n> --tag <vX.Y.Z> --merge registry/plugins/<id>.json --out registry/plugins/<id>.json`
    (prepends; array stays newest-first) — or `publish`, which handles it.
-4. PR the updated file.
+   ⚠️ **`trip-page`: `preflight`/`publish` reject the type on SDK ≤ 1.3.x**
+   (see the schema table above) — use `submit`, `publish --no-preflight`, or the
+   hand-edit path below.
+4. PR the updated **single** file.
+
+### Hand-editing an existing entry (works for every type, required for `trip-page` on SDK ≤ 1.3.x)
+
+Start from the **merged** file in TREK-Plugins `main` (not a stale local copy),
+then:
+
+- **Prepend** the new version object at the **top** of `versions[]` (newest
+  first) and **keep every old version block untouched** — CI re-validates *all*
+  of them, and old released bytes are immutable anyway.
+- Fill the new block **from the uploaded release asset**, never a local
+  re-pack (hashes aren't reproducible — see the artifact note above):
+  `sha256` = `curl -fsSL <downloadUrl> | sha256sum`, `size` = the asset's exact
+  byte count (`curl -sIL <downloadUrl> | grep -i content-length`),
+  `commitSha` = `git rev-parse vX.Y.Z^{commit}`, plus `gitTag`, `downloadUrl`,
+  `minTrekVersion`, `apiVersion`, `nativeModules: false`.
+- **Leave `reviewedAt` and `boundOwner` exactly as they are in the merged
+  entry** — CI maintains them; don't delete, don't update. And never touch
+  `dist/`.
+- Top-level fields (`description`, `tags`, `homepage`, …) may change in the
+  same PR; the entry `description` need not match the manifest (schema table
+  above).
 
 Instances see updates on their next registry poll; applying one is an explicit
 admin action, and **if the new version requests more permissions the admin

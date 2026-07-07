@@ -53,9 +53,12 @@ npx trek-plugin-sdk publish --repo you/trek-plugin-my-widget --tag v1.0.0
 #    Add --sign to sign the artifact (recommended). Requires git + gh (authed).
 ```
 
-Update flow: bump `version` in the manifest, re-pack, new `vX.Y.Z` tag/release,
-then `entry --merge` onto the existing registry file (newest version first) and
-PR it — see [references/publishing.md](references/publishing.md).
+Update flow: bump `version` in the manifest, re-pack, new `vX.Y.Z` tag/release
+(asset attached **before** `entry` — else `artifact not found`), then
+`entry --merge` onto the existing registry file (newest version first) and PR it.
+For `trip-page` (broken local preflight, SDK ≤ 1.3.x) there's a hand-edit path —
+see "Updating a published plugin" in
+[references/publishing.md](references/publishing.md).
 
 ## Build the UI / store shot *with* the user, not for them
 
@@ -144,15 +147,23 @@ raise planner warnings (`hook:trip-warning-provider`) with no UI of its own. See
    `ctx.meta` stores the plugin's own namespaced data on a trip/place/day (reads
    need trip access, writes the entity's edit permission). **Heads-up: these
    ≥3.2.1 namespaces (`meta`/`places`/`days`/`itinerary`/`costs`/`packing`/`files`/
-   `trips.update`) are `undefined` in `trek-plugin dev` (SDK 1.3.0)** — exercise
-   them on a real instance or via `createMockHost`, not the dev server (see
-   [testing.md](references/testing.md)). Budget amount key is **`total_price`**,
+   `trips.update`) are `undefined` in `trek-plugin dev` (SDK 1.3.0) — and have
+   been observed partly `undefined` on real hosts too.** Treat them all as
+   optional: `db:own` as source of truth, `ctx.meta` only a best-effort mirror,
+   every optional call behind a thunked guard (`attempt(() => ctx.meta.set(…))`
+   — the thunk also catches the synchronous property throw). See
+   [server-api.md](references/server-api.md) and
+   [testing.md](references/testing.md). Budget amount key is **`total_price`**,
    not `amount` (unknown keys are silently dropped → saves 0).
 5. **No native modules** — `.node`, `binding.gyp`, `prebuilds/` are refused at
    pack, CI, and install time. `nativeModules` must be `false`/absent.
 6. **Git tag == manifest `version`** (`v1.2.3` ↔ `"version": "1.2.3"`), and the
    registry pins the release asset's exact **sha256** — never re-upload or
-   mutate a released `plugin.zip`; cut a new version instead.
+   mutate a released `plugin.zip`; cut a new version instead. The zip is **not
+   byte-reproducible** (different machines/SDK patch versions → different
+   sha256+size from identical sources), so always take `sha256`/`size` **from
+   the uploaded release asset**, never from a local re-pack — see
+   [references/publishing.md](references/publishing.md).
 7. **README quality gate is a hard CI gate:** sections **What it does /
    Screenshots / Permissions / Setup** (substring-matched, any heading level),
    ≥ 400 chars of real prose, at least one screenshot whose URL returns
