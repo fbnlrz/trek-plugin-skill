@@ -58,6 +58,8 @@ window.parent.postMessage(
 | `trek:notify` | `{ level, message }` | Toast; `level` = `info` \| `success` \| `warning` \| `error` |
 | `trek:resize` | `{ height }` | Set iframe height (capped at 2000 px) |
 | `trek:invoke` | `{ requestId, sub, method, body }` | Call your own route (`sub` is the path below `/api/plugins/<id>`, query string allowed); resolves as `trek:response` or `trek:error` |
+| `trek:openExternal` | `{ url }` | Ask the host to open an external URL in a new browser tab. **Newer hosts only — older hosts silently ignore it** (links "do nothing"); always use the fallback chain in [Opening external links](#opening-external-links-trekopenexternal) |
+| `trek:confirm` | `{ requestId, message, … }` | Ask the host to show a native confirm dialog; the host answers with `trek:confirm:result` (correlate by `requestId`). Newer hosts only — on older hosts no reply ever comes, so pair it with a timeout or an in-frame fallback dialog |
 
 ### Messages TREK sends you (host bridge)
 
@@ -66,6 +68,37 @@ window.parent.postMessage(
 | `trek:context` | **3.2.0:** `{ tripId, userId, theme, locale, hostOrigin }`. **≥3.2.1 also sends** `user` (`{name, avatar, isAdmin}` or `null` — never email), `formats` (`{locale, currency, timeFormat, distanceUnit, temperatureUnit, timezone}`), `tokens` (the global palette for the current theme — see §1), and `appearance` (`{scheme, density, reducedMotion, noTransparency}`). `tripId` is **`string \| null`** — `null` for a `page` plugin and a widget with no spotlighted trip, but **set for a `trip-page` tab and a `place-detail` widget** (≥3.2.1). **≥3.2.1 also adds `placeId`** (`string \| null`): the place in view for a `place-detail` widget, else `null`. `userId` is a string or `null`. `theme` is `'light'`/`'dark'`. **Re-sent live** on any theme/appearance change (≥3.2.1 watches accent/density/high-contrast/reduced-motion too) — handle **repeated** `trek:context`, not just the first. See [Making the UI feel native](#making-the-ui-feel-native). |
 | `trek:response` | `{ requestId, data }` — successful `trek:invoke` |
 | `trek:error` | `{ requestId, code, message }` — failed `trek:invoke`; `code` is the HTTP status or `"error"` |
+| `trek:confirm:result` | `{ requestId, confirmed }` — reply to your `trek:confirm` |
+| `trek:event` | `{ event, tripId }` — live push of a core trip event into the frame (newer hosts, trip-scoped frames). Carries **only** the event name + `tripId`, never the payload — fetch details via `trek:invoke`. Treat as an optional accelerator on top of polling, not a replacement (older hosts never send it) |
+
+> **Wire protocol vs. kit helpers — check your SDK version.** The messages above
+> are the raw wire protocol: you can send/handle them with hand-rolled
+> `postMessage` on **any** SDK (many plugins roll the bridge themselves instead
+> of using the kit — the wire types are the contract, `window.trek` is just
+> sugar). The matching kit helpers — `trek.openExternal(url)`,
+> `trek.confirm(…)`, `trek.onEvent(cb)` — exist only in the **SDK ≥ 1.4.0** kit;
+> **`npx trek-plugin-sdk` currently resolves 1.3.1**, whose inlined kit does
+> *not* have them (calling them is a TypeError). On a 1.3.x kit, speak the wire
+> messages directly — they coexist fine with the rest of the kit.
+
+### Opening external links (`trek:openExternal`)
+
+Plain `<a target="_blank">` / `window.open()` can be blocked: the sandbox is
+`allow-scripts allow-forms` — **no `allow-popups`** — so the real frame typically
+blocks popups. And the `trek:openExternal` bridge message is only handled by
+newer hosts; on older hosts it is silently ignored, so a naive link is
+**completely dead** (observed on a real instance: clicks "did nothing"). Use the
+fallback chain and keep the URL user-visible as a last resort:
+
+```js
+function openExternal(url) {
+  var w = null
+  try { w = window.open(url, '_blank', 'noopener') } catch (e) {}
+  if (!w) parent.postMessage({ type: 'trek:openExternal', url: url }, '*')
+  // Older hosts ignore the bridge message too — if the link matters, also
+  // render the URL as selectable text so the user can copy it manually.
+}
+```
 
 ## Practical notes
 
@@ -156,7 +189,9 @@ You then get the native TREK look for free:
 - **`window.trek`**: `onContext(cb)` (fires immediately if context already
   arrived; returns an unsubscribe fn), `context`, `invoke(sub, {method, body})`
   → Promise (rejects with an `Error` whose `.code` = the HTTP status), `notify`,
-  `navigate`, `resize`, `ready`, `requestContext`.
+  `navigate`, `resize`, `ready`, `requestContext`. (**SDK ≥ 1.4.0 only** adds
+  `openExternal`, `confirm`, `onEvent` — a 1.3.x kit doesn't have them; use the
+  raw wire messages, see the version note under [Protocol](#protocol).)
 - **`window.trek.ui`** (≥3.2.1) — bundler-free DOM builders that emit the kit's
   `trek-*` classes, so you can build themed UI with **no CSS and no build step**:
   `ui.el(tag, props, children)` (the general builder — `props` take
@@ -196,6 +231,16 @@ the source — they can drift):
 | `--accent-hover` | `#1f2937` | `#d4d4d8` |
 | `--success` | `#16a34a` | `#22c55e` |
 | `--danger` | `#dc2626` | `#ef4444` |
+
+> ⚠️ **The `--accent` in this table is monochrome (near-black light / near-white
+> dark) — it is NOT the user's real accent colour.** The actual accent the user
+> picked arrives only at runtime via **`trek:context.tokens`** (≥3.2.1; the
+> kit's `applyTokens` applies it — hand-rolled bridges must copy `tokens` onto
+> `:root` themselves). Don't design or tune contrast against the monochrome
+> default: anything tinted with `--accent` will render in the host in an
+> arbitrary user-chosen hue. Test with `/preview`'s **accent toggle**, and put
+> text on accent surfaces in the delivered `--accent-text`, never a hardcoded
+> colour.
 
 Radius scale: `--radius-sm 8px`, `--radius-md 12px`, `--radius-lg 16px`,
 `--radius-xl 20px`. Card shadow (`--shadow-card`, light):
@@ -262,6 +307,16 @@ const L = (m.locale || '').toLowerCase().startsWith('de') ? STR.de : STR.en
 
 - **No emoji in the UI** — TREK's own interface is emoji-free. Use inline SVG
   icons/marks and plain text so the plugin matches the host.
+- **Size every inline SVG explicitly** (footgun, hit repeatedly in real builds):
+  an inline `<svg>` without `width`/`height`/CSS sizing falls back to
+  replaced-element defaults and — inside a flex/grid tile — **blows up to fill
+  the whole card** (a "small icon" becomes a giant graphic in a banner/button).
+  Ship a global baseline and size icons off the font, then override deliberately
+  for real artwork:
+  ```css
+  svg { width: 1em; height: 1em; flex-shrink: 0; }   /* icons follow font-size */
+  .artwork svg { width: auto; height: 120px; }       /* explicit for real art  */
+  ```
 - `--text-muted` for small uppercase kicker labels,
   `font-variant-numeric: tabular-nums` for counts.
 - **Buttons — TREK's exact spec** (without the kit; ≥3.2.1's `.trek-btn` already

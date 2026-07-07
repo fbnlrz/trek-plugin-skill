@@ -153,12 +153,38 @@ export interface PluginContext {
 | `ctx.costs.create` / `update(tripId, itemId, input)` / `delete(tripId, itemId)` **(≥3.2.1)** | **Route handlers only.** Create/edit/remove budget items (frozen FX + members/payers); **broadcasts `budget:created/updated/deleted`**. Requires the Costs addon **+** trip access **+** the acting user's **`budget_edit`**; input zod-validated (→ `BAD_PARAMS`). **The amount field is `total_price` (a number), NOT `amount`** — accepted keys: `name` (required), `total_price`, `currency`, `category`, `exchange_rate`, `payers`, `member_ids`, `note`, `expense_date`, … (`budgetCreateItemRequestSchema`). ⚠️ **zod strips unknown keys silently**, so `{ name, amount: 5000 }` **succeeds but saves the item at 0** (no error, shows "¥ 0") — pass `total_price`. | `db:write:costs` |
 | `ctx.trips.update(tripId, input)` **(≥3.2.1)** | **Route handlers only.** Edit trip fields (`title`/`start_date`/`end_date`/`currency`/`reminder_days`/…). Trip access **+** the acting user's **`trip_edit`**; setting `is_archived` also needs **`trip_archive`**, `cover_image` needs **`trip_cover_upload`**. zod-validated (→ `BAD_PARAMS`); broadcasts `trip:updated`. | `db:write:trips` |
 | `ctx.places.*` / `ctx.days.*` / `ctx.itinerary.*` **(≥3.2.1)** | **Route handlers only.** Create/update/delete planner places & days; assign/unassign places to days. Trip access **+** the matching edit permission (`place_edit` / `day_edit` / `day_edit`); the day & place must belong to the trip. zod-validated (→ `BAD_PARAMS`); each broadcasts the app's real event (`place:*` / `day:*` / `assignment:*`) and is audited. | `db:write:places` / `db:write:days` / `db:write:itinerary` |
-| `ctx.meta.*` **(≥3.2.1)** | **Route handlers only.** The plugin's **own** namespaced KV store on a `trip`/`place`/`day` (`get`/`set`/`list`/`delete`). Reads need trip access; writes need the entity's edit permission. Per-plugin namespace; quotas key ≤ 256 chars / value ≤ 64 KB JSON / ≤ 100 keys per entity (over → `BAD_PARAMS`). Enrich core entities without forking the schema. | `db:meta` |
+| `ctx.meta.*` **(≥3.2.1)** | **Route handlers only.** The plugin's **own** namespaced KV store on a `trip`/`place`/`day` (`get`/`set`/`list`/`delete`). Reads need trip access; writes need the entity's edit permission. Per-plugin namespace; quotas key ≤ 256 chars / value ≤ 64 KB JSON / ≤ 100 keys per entity (over → `BAD_PARAMS`). Enrich core entities without forking the schema. ⚠️ **Can be `undefined` on real hosts too** — never hard-depend; see the optional-namespaces note below. | `db:meta` |
 | `ctx.ws.broadcastToTrip` | **Route handlers only.** The acting user must be a member of the target trip. Event to the **core TREK app's** trip-room clients as `plugin:<id>:<event>`. | `ws:broadcast:trip` |
 | `ctx.ws.broadcastToUser` | **Route handlers only.** Target **must equal the acting user** (`userId === req.user.id`) — you can only push to the acting user's **own** connections. Event to core clients as `{ type: 'plugin:<id>', event, ...data }`. | `ws:broadcast:user` |
 | `ctx.config` | **Instance-scoped** settings, decrypted and **frozen at activation** (`secret:true` arrive decrypted, server-side only). Not per-user; not hot-reloaded — change requires deactivate→activate. `scope:user` settings are **not** surfaced here in 3.2.0. | — |
 | `ctx.log` | `info`/`warn`/`error` → the plugin's error log in Admin → Plugins. | — |
 | `ctx.id` | Your plugin id (also in `process.env.TREK_PLUGIN_ID`). | — |
+
+> **Treat every ≥3.2.1 namespace as optional — even on a real host.** The
+> optional namespaces (`ctx.meta`, `places`, `days`, `itinerary`, `costs`,
+> `packing`, `files`, `trips.update`) are not just `undefined` under
+> `trek-plugin dev` (SDK 1.3.0, see [testing.md](testing.md)) — they have been
+> observed **partly `undefined` on real production hosts** as well: a live
+> route using `ctx.meta.set(…)` crashed with `Cannot read properties of
+> undefined (reading 'set')`. So never build a feature that *hard-requires*
+> them. The robust pattern:
+>
+> - **`db:own` is the source of truth** for your plugin's own data; mirror into
+>   `ctx.meta` only **best-effort** (so core surfaces that read meta stay
+>   enriched where it exists, but nothing breaks where it doesn't).
+> - Route every optional-`ctx.*` call through a guard that takes a **thunk**, so
+>   the *synchronous property throw* on an `undefined` namespace is caught too —
+>   `attempt(ctx.meta.set(x))` throws while evaluating the argument, *before*
+>   `attempt` runs; `attempt(() => ctx.meta.set(x))` catches it:
+>
+> ```js
+> async function attempt(fn, fallback) {
+>   try { return await fn() } catch (e) { return fallback }
+> }
+> // db:own first (source of truth), meta second (best-effort mirror):
+> await ctx.db.exec('INSERT OR REPLACE INTO pins (trip_id, data) VALUES (?, ?)', tripId, json)
+> await attempt(() => ctx.meta.set('trip', tripId, 'pinned', data))
+> ```
 
 > **`ctx.ws.broadcast*` never reaches your own plugin UI.** Broadcasts go to the
 > **core TREK app's** WebSocket clients; there is no path forwarding

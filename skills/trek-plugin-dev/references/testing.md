@@ -34,7 +34,11 @@ Fidelity details:
   `undefined`, `ctx.meta.get(…)` throws **synchronously at property access**, before
   any Promise — a `try { await attempt(ctx.meta.get(x)) }` won't catch it (the throw
   happens while evaluating the argument). Guard with a **thunk**: `attempt(() =>
-  ctx.meta.get(x))`, or `typeof ctx.meta === 'undefined'`.
+  ctx.meta.get(x))`, or `typeof ctx.meta === 'undefined'`. **This guard is not a
+  dev-only nicety:** the same namespaces have been observed partly `undefined`
+  on **real hosts** too — keep the thunk guard in production code and treat
+  `db:own` as the source of truth (see
+  [server-api.md](server-api.md#ctx-semantics-and-required-permissions)).
 - `db:own` is backed by a real SQLite file at `.trek-dev/db.sqlite` when the
   Node runtime has `node:sqlite`.
 - Simulate an unauthenticated request with `?_anon=1` — an `auth: true` route
@@ -75,8 +79,12 @@ It adds:
     `scripts/store-shot.html`'s CONFIG first). `shot.mjs` starts `dev`, captures
     at 1600×900, and stops it; it places the harness in `client/` **only** for the
     shot and deletes it, so it never ships in `plugin.zip`.
-- **`.gitattributes`** (`* text=auto eol=lf`) so `plugin.zip`'s sha256/size are
-  reproducible across platforms (the CRLF trap).
+- **`.gitattributes`** (`* text=auto eol=lf`) so line endings don't change your
+  file bytes across platforms (the CRLF trap). ⚠️ This does **not** make
+  `plugin.zip` byte-reproducible: different SDK patch versions produce different
+  sha256/size from identical LF sources (zip metadata/mtimes) — the registry
+  `sha256`/`size` must always come from the **uploaded release asset**, see
+  [publishing.md](publishing.md).
 - **`dev-fixtures.json`** template for the dev server.
 - **`--web-hook`:** a **SessionStart hook** (`.claude/hooks/plugin-dev.sh`, wired
   into `.claude/settings.json`) that runs `npm install` on each new session — so a
