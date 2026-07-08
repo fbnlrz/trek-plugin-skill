@@ -55,40 +55,49 @@ window.parent.postMessage(
 | `trek:ready` | — | TREK replies with `trek:context` |
 | `trek:context:request` | — | Re-request the context |
 | `trek:navigate` | `{ to }` | In-app navigation to an **app-absolute path** (must start with `/`, query string allowed; protocol-relative `//…` is rejected) — it is **not** limited to relative paths |
-| `trek:notify` | `{ level, message }` | Toast; `level` = `info` \| `success` \| `warning` \| `error` |
+| `trek:notify` | `{ level, message }`; **≥3.2.2** also an optional `duration` (ms, host-clamped to ~1500–15000) | Toast; `level` = `info` \| `success` \| `warning` \| `error`. On ≤3.2.1 `duration` is ignored (host default timeout) |
 | `trek:resize` | `{ height }` | Set iframe height (capped at 2000 px) |
 | `trek:invoke` | `{ requestId, sub, method, body }` | Call your own route (`sub` is the path below `/api/plugins/<id>`, query string allowed); resolves as `trek:response` or `trek:error` |
-| `trek:openExternal` | `{ url }` | Ask the host to open an external URL in a new browser tab. **Newer hosts only — older hosts silently ignore it** (links "do nothing"); always use the fallback chain in [Opening external links](#opening-external-links-trekopenexternal) |
-| `trek:confirm` | `{ requestId, message, … }` | Ask the host to show a native confirm dialog; the host answers with `trek:confirm:result` (correlate by `requestId`). Newer hosts only — on older hosts no reply ever comes, so pair it with a timeout or an in-frame fallback dialog |
+| `trek:openExternal` **(host ≥3.2.2)** | `{ url }` | Ask the host to open an `http`/`https` URL in a new browser tab (the sandbox has no `allow-popups`). **≤3.2.1 hosts silently ignore it** (links "do nothing") — always use the fallback chain in [Opening external links](#opening-external-links-trekopenexternal) |
+| `trek:confirm` **(host ≥3.2.2)** | `{ requestId, message, … }` | Ask the host to render a **native** confirm dialog (one at a time; the host always leads the title with the plugin name, so a plugin can't spoof a TREK system dialog). The host answers with `trek:confirm:result` (correlate by `requestId`). **≤3.2.1: no reply ever comes** — pair it with a timeout or an in-frame fallback dialog |
 
 ### Messages TREK sends you (host bridge)
 
 | Message | Payload |
 |---|---|
-| `trek:context` | **3.2.0:** `{ tripId, userId, theme, locale, hostOrigin }`. **≥3.2.1 also sends** `user` (`{name, avatar, isAdmin}` or `null` — never email), `formats` (`{locale, currency, timeFormat, distanceUnit, temperatureUnit, timezone}`), `tokens` (the global palette for the current theme — see §1), and `appearance` (`{scheme, density, reducedMotion, noTransparency}`). `tripId` is **`string \| null`** — `null` for a `page` plugin and a widget with no spotlighted trip, but **set for a `trip-page` tab and a `place-detail` widget** (≥3.2.1). **≥3.2.1 also adds `placeId`** (`string \| null`): the place in view for a `place-detail` widget, else `null`. `userId` is a string or `null`. `theme` is `'light'`/`'dark'`. **Re-sent live** on any theme/appearance change (≥3.2.1 watches accent/density/high-contrast/reduced-motion too) — handle **repeated** `trek:context`, not just the first. See [Making the UI feel native](#making-the-ui-feel-native). |
+| `trek:context` | **3.2.0:** `{ tripId, userId, theme, locale, hostOrigin }`. **≥3.2.1 also sends** `user` (`{name, avatar, isAdmin}` or `null` — never email), `formats` (`{locale, currency, timeFormat, distanceUnit, temperatureUnit, timezone}`), `tokens` (the global palette for the current theme — see §1), and `appearance` (`{scheme, density, reducedMotion, noTransparency}`). `tripId` is **`string \| null`** — `null` for a `page` plugin and a widget with no spotlighted trip, but **set for a `trip-page` tab and a `place-detail` widget** (≥3.2.1). **≥3.2.1 also adds `placeId`** (`string \| null`): the place in view for a `place-detail` widget, else `null`. **≥3.2.2 also adds `dir`** (`'ltr' \| 'rtl'`) for the current locale's writing direction; the kit sets `lang` + `dir` on `<html>` from it, so kit-styled UI is RTL-correct for free (hand-rolled UIs should mirror it themselves). `userId` is a string or `null`. `theme` is `'light'`/`'dark'`. **Re-sent live** on any theme/appearance change (≥3.2.1 watches accent/density/high-contrast/reduced-motion too) — handle **repeated** `trek:context`, not just the first. See [Making the UI feel native](#making-the-ui-feel-native). |
 | `trek:response` | `{ requestId, data }` — successful `trek:invoke` |
 | `trek:error` | `{ requestId, code, message }` — failed `trek:invoke`; `code` is the HTTP status or `"error"` |
-| `trek:confirm:result` | `{ requestId, confirmed }` — reply to your `trek:confirm` |
-| `trek:event` | `{ event, tripId }` — live push of a core trip event into the frame (newer hosts, trip-scoped frames). Carries **only** the event name + `tripId`, never the payload — fetch details via `trek:invoke`. Treat as an optional accelerator on top of polling, not a replacement (older hosts never send it) |
+| `trek:confirm:result` **(host ≥3.2.2)** | `{ requestId, confirmed }` — reply to your `trek:confirm` |
+| `trek:event` **(host ≥3.2.2)** | `{ event, tripId }` — live push of a trip event into the frame for the trip in view: **core events** (`place:created`, `day:updated`, …) **and your own `plugin:<id>:*` broadcasts**. Carries **only** the event name + `tripId`, never the payload — fetch details via `trek:invoke`. This is the **client-side counterpart of the server `events` surface**, and the first path that lets your own `ctx.ws.broadcast*` reach your iframe (≤3.2.1 it never arrived — see [server-api.md](server-api.md)). Still treat it as an accelerator on top of polling; ≤3.2.1 hosts never send it |
 
-> **Wire protocol vs. kit helpers — check your SDK version.** The messages above
-> are the raw wire protocol: you can send/handle them with hand-rolled
-> `postMessage` on **any** SDK (many plugins roll the bridge themselves instead
-> of using the kit — the wire types are the contract, `window.trek` is just
-> sugar). The matching kit helpers — `trek.openExternal(url)`,
-> `trek.confirm(…)`, `trek.onEvent(cb)` — exist only in the **SDK ≥ 1.4.0** kit;
-> **`npx trek-plugin-sdk` currently resolves 1.3.1**, whose inlined kit does
-> *not* have them (calling them is a TypeError). On a 1.3.x kit, speak the wire
-> messages directly — they coexist fine with the rest of the kit.
+> **`openExternal`/`confirm`/`onEvent` need BOTH a new host AND a new kit.** Two
+> independent version floors:
+> - **Host side (TREK ≥ 3.2.2):** the host must *handle* `trek:openExternal` /
+>   `trek:confirm` and *send* `trek:event` / `trek:confirm:result`. On ≤3.2.1
+>   these messages are ignored — the wire calls are inert no matter what SDK you
+>   built with.
+> - **Client side (SDK ≥ 1.4.0):** the kit helpers `trek.openExternal(url)`,
+>   `trek.confirm(opts)` (→ `Promise<boolean>`), and `trek.onEvent(cb)` exist
+>   only in the 1.4.0 kit. **`npx trek-plugin-sdk` currently resolves 1.3.1**,
+>   whose inlined kit does *not* have them (calling them is a TypeError).
+>
+> The wire protocol is the real contract — you can send/handle these messages
+> with hand-rolled `postMessage` on **any** SDK (many plugins roll the bridge
+> themselves; `window.trek` is just sugar). So on a 1.3.x kit, speak the wire
+> messages directly (they coexist with the rest of the kit), and always keep the
+> ≤3.2.1 host fallbacks below — a plugin ships to hosts of both versions.
 
 ### Opening external links (`trek:openExternal`)
 
 Plain `<a target="_blank">` / `window.open()` can be blocked: the sandbox is
 `allow-scripts allow-forms` — **no `allow-popups`** — so the real frame typically
 blocks popups. And the `trek:openExternal` bridge message is only handled by
-newer hosts; on older hosts it is silently ignored, so a naive link is
-**completely dead** (observed on a real instance: clicks "did nothing"). Use the
-fallback chain and keep the URL user-visible as a last resort:
+**hosts ≥ 3.2.2**; on ≤3.2.1 hosts it is silently ignored, so a naive link is
+**completely dead** (observed on a real instance: clicks "did nothing"). On SDK
+≥ 1.4.0 `trek.openExternal(url)` wraps the bridge send, but you still need the
+same ≤3.2.1 fallback. Use the fallback chain and keep the URL user-visible as a
+last resort:
 
 ```js
 function openExternal(url) {
@@ -189,9 +198,10 @@ You then get the native TREK look for free:
 - **`window.trek`**: `onContext(cb)` (fires immediately if context already
   arrived; returns an unsubscribe fn), `context`, `invoke(sub, {method, body})`
   → Promise (rejects with an `Error` whose `.code` = the HTTP status), `notify`,
-  `navigate`, `resize`, `ready`, `requestContext`. (**SDK ≥ 1.4.0 only** adds
-  `openExternal`, `confirm`, `onEvent` — a 1.3.x kit doesn't have them; use the
-  raw wire messages, see the version note under [Protocol](#protocol).)
+  `navigate`, `resize`, `ready`, `requestContext`. (**SDK ≥ 1.4.0 + host ≥ 3.2.2
+  only** adds `openExternal`, `confirm`, `onEvent` — see the ≥3.2.2 additions
+  below and the version note under [Protocol](#protocol); a 1.3.x kit doesn't
+  have them.)
 - **`window.trek.ui`** (≥3.2.1) — bundler-free DOM builders that emit the kit's
   `trek-*` classes, so you can build themed UI with **no CSS and no build step**:
   `ui.el(tag, props, children)` (the general builder — `props` take
@@ -204,6 +214,36 @@ You then get the native TREK look for free:
   (`--glass-*`, `--r-*`) that is deliberately *not* delivered in `tokens`.
 - **Preview it:** `npx trek-plugin-sdk dev`, then open **`/preview`** — a themed
   host with light/dark + accent toggles (see [testing.md](testing.md)).
+
+#### Kit additions in ≥3.2.2 / SDK 1.4.0 (unreleased — npm latest is 1.3.1)
+
+The upcoming SDK 1.4.0 kit (paired with a TREK ≥3.2.2 host) adds — **none of
+this is in the 1.3.1 kit `npx` gives you today**:
+
+- **`<select>` auto-upgrade.** The kit bootstrap replaces every native
+  `<select>` with a host-styled, keyboard-accessible listbox
+  (`.trek-select-trigger` / `.trek-select-menu` / `.trek-select-option`), while
+  the **real `<select>` stays in the DOM as the value/form source and still fires
+  `change`** — so your existing code keeps working. Opt a field out with
+  **`data-trek-native`**; `multiple`/`size` selects are left native. `validate`
+  (SDK 1.4.0) now **warns** when `client/index.html` ships a raw `<select>`
+  without the kit inlined. On a 1.3.x kit there's no upgrade — style `.trek-select`
+  yourself.
+- **New `window.trek` helpers** (also listed in the wire-protocol note above):
+  `trek.confirm(opts)` → **`Promise<boolean>`** (host-rendered native confirm,
+  one at a time; the host prefixes the title with your plugin name so it can't
+  spoof a TREK system dialog), `trek.openExternal(url)` (open an `http`/`https`
+  URL in a new tab), and `trek.onEvent(cb)` — the client-side counterpart of the
+  server `events` surface, firing on core events **and your own `plugin:<id>:*`
+  broadcasts** for the trip in view (the `trek:event` message).
+- **`trek:notify` gains `duration`** (ms, host-clamped ~1500–15000).
+- **RTL:** `trek:context` carries `dir` (`'ltr'|'rtl'`) and the kit sets
+  `lang` + `dir` on `<html>`, so kit UI is direction-correct automatically.
+- **Motion library in the kit CSS**, all degrading under `[data-reduce-motion]` /
+  `prefers-reduced-motion`: `trek-menu-enter`, `trek-popover-enter`,
+  `trek-modal-enter`, `trek-toast-enter`, `trek-stagger`, `trek-page-enter`,
+  `trek-skeleton`, `trek-pie-reveal`, `trek-bar-fill`. Use these instead of
+  hand-rolled keyframes so animation matches TREK and respects reduced-motion.
 
 The rest of this section is the **by-hand path** (no kit): reproduce the tokens
 and press-feel yourself, driving them off `trek:context`.

@@ -69,7 +69,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `repo` | `owner/name` (GitHub). Source of truth for the code. |
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
-| `type` | `integration` \| `page` \| `widget` \| `trip-page` **(≥3.2.1)** — `trip-page` is in the registry `main` schema's `type` enum (v3-2-1 was merged), so the **live CI** validates it. ⚠️ **But the SDK 1.3.0 local `preflight` still rejects `trip-page`** (`preflight.ts:50` hardcodes the old 3-type list) — so `preflight`/`publish` fail on it locally even though CI would pass. Use `submit` or `publish --no-preflight` (see [cli.md](cli.md)). |
+| `type` | `integration` \| `page` \| `widget` \| `trip-page` **(≥3.2.1)** — `trip-page` is in the registry `main` schema's `type` enum (v3-2-1 was merged), so the **live CI** validates it. ⚠️ **But the SDK ≤ 1.3.x local `preflight` still rejects `trip-page`** (`preflight.ts:50` hardcodes the old 3-type list) — so `preflight`/`publish` fail on it locally even though CI would pass. Use `submit` or `publish --no-preflight` (see [cli.md](cli.md)). **Fixed in SDK 1.4.0** (`preflight.ts:50` includes `trip-page`) — no workaround needed on ≥1.4.0. |
 | `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |
