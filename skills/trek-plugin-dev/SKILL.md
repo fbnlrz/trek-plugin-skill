@@ -102,9 +102,9 @@ See [references/testing.md](references/testing.md).
 
 | `type` | Surfaces | Use for |
 |---|---|---|
-| `widget` | Dashboard card (`sidebar` slot — ~180px on 3.2.0, glassy auto-height on ≥3.2.1) or a **non-interactive** boarding-pass hero strip (`hero` slot, ~110px, desktop-only). **(≥3.2.1)** also the `place-detail` slot → a panel in the trip planner's place inspector (gets `placeId`); **(≥3.3.0)** also `day-detail` (gets `dayId`) and `reservation-detail` (gets `reservationId`) | At-a-glance info (flight status, weather, mascot); a per-place/day/reservation add-on |
+| `widget` | Dashboard card (`sidebar` slot — ~180px on 3.2.0, glassy auto-height on ≥3.2.1) or a **non-interactive** boarding-pass hero strip (`hero` slot, ~110px, desktop-only). also the `place-detail` slot → a panel in the trip planner's place inspector (gets `placeId`); also `day-detail` (gets `dayId`) and `reservation-detail` (gets `reservationId`) | At-a-glance info (flight status, weather, mascot); a per-place/day/reservation add-on |
 | `page` | Own entry in the top navigation → full-page iframe (you own the layout) | A self-contained tool |
-| `trip-page` **(≥3.2.1)** | A tab **inside every trip planner**, scoped to the open trip (`tripId` always set); full-frame like `page`, no dashboard nav. **(≥3.3.0)** `capabilities.tripPage` can replace core tabs / set tab position (tab-takeover) | A per-trip tool |
+| `trip-page` | A tab **inside every trip planner**, scoped to the open trip (`tripId` always set); full-frame like `page`, no dashboard nav. `capabilities.tripPage` can replace core tabs / set tab position (tab-takeover) | A per-trip tool |
 | `integration` | No UI; background routes, plus **wired provider hooks** (≥3.2.1: place-detail / trip-warning; **≥3.3.0: table / map-marker / pdf-section / atlas-layer / journal-entry / trip-card**, plus photo/calendar now consumed) | Feeding/syncing data; enriching core UI natively |
 
 Note: **`jobs[]` scheduling is version-dependent.** ≤3.2.1: **declared but never
@@ -136,17 +136,17 @@ with no iframe. See [references/server-api.md](references/server-api.md).
    the **`http:outbound:<host>` permissions**, *not* from `egress[]` (which is
    only checked for presence). A host listed in `egress[]` but not granted as
    `http:outbound:<host>` is **silently blocked at runtime**. Keep both lists
-   identical. Bare `http:outbound` alone reaches nothing — **unless (≥3.3.0) you
+   identical. Bare `http:outbound` alone reaches nothing — **unless you
    set `operatorEgress: true`**, which waives the non-empty-`egress[]` rule so you
    ship an **empty `egress[]`** and the **admin configures the real hosts at
    runtime** (for plugins whose egress hosts aren't known up front).
-4. **`ctx.trips`, `ctx.users`, `ctx.costs`, `ctx.ws.*` — and (≥3.2.1)
+4. **`ctx.trips`, `ctx.users`, `ctx.costs`, `ctx.ws.*` — and
    `ctx.packing`/`ctx.files`/`ctx.places`/`ctx.days`/`ctx.itinerary`/`ctx.trips.update`/`ctx.meta` — work
    only inside route handlers** (they need the acting user the host binds from the
    request; from `onLoad`/jobs/**events** → `RESOURCE_FORBIDDEN`). `asUserId` is ignored;
    `ctx.users` returns only self or a trip co-member; `ctx.ws.broadcastToUser`
    targets only the acting user — and **no broadcast reaches your own iframe**
-   (poll via `trek:invoke`). **(≥3.2.1) several `ctx.*` paths now write core TREK
+   (poll via `trek:invoke`). ** several `ctx.*` paths now write core TREK
    data** (`places`/`days`/`itinerary`/`trips.update`, plus `costs.create`): each
    is route-only and gated on the acting user's matching edit permission
    (`place_edit`/`day_edit`/`trip_edit`/`budget_edit`), exactly like the web UI.
@@ -160,7 +160,7 @@ with no iframe. See [references/server-api.md](references/server-api.md).
    catches the synchronous property throw). See
    [server-api.md](references/server-api.md) and
    [testing.md](references/testing.md). Budget amount key is **`total_price`**,
-   not `amount` (unknown keys are silently dropped → saves 0). **(≥3.3.0) the
+   not `amount` (unknown keys are silently dropped → saves 0). ** the
    `ctx.*` surface roughly triples** — new booking/roster/personal-data DB
    namespaces (`reservations`/`accommodations`/`packing` writes+bags/`collab`/
    `journal`/`atlas`/`vacay`/`collections`/`daynotes`/`todos`/`tags`/`categories`/
@@ -169,7 +169,7 @@ with no iframe. See [references/server-api.md](references/server-api.md).
    `ctx.db.tx` atomic batches, and `ctx.plugins.call`/`ctx.events.emit` for
    inter-plugin calls — each behind its own new permission (see
    [manifest.md](references/manifest.md)).
-   **Host brokers (≥3.3.0) are a distinct, non-DB family** — `ctx.notify`
+   **Host brokers are a distinct, non-DB family** — `ctx.notify`
    (`notify:send`), `ctx.ai` (`ai:invoke`), `ctx.oauth` (`oauth:client`),
    `ctx.weather` (`weather:read`), `ctx.rates` (`rates:read`): `notify`/`oauth`
    are acting-user-scoped (route-only), `ai`/`weather`/`rates` are tenant-free
@@ -237,7 +237,7 @@ with no iframe. See [references/server-api.md](references/server-api.md).
 - Crash/hang/OOM kills only the plugin's process; TREK keeps running. Watchdog:
   RSS 300 MB, 192 MB heap, 30 s `onLoad`/route timeouts, 5 crashes/5 min →
   auto-disabled (see [references/server-api.md](references/server-api.md)).
-- **(≥3.3.0) Per-plugin RPC rate limit:** a token bucket at the `ctx` dispatch
+- ** Per-plugin RPC rate limit:** a token bucket at the `ctx` dispatch
   boundary (defaults burst 60, 20/s, 16 in-flight; env `TREK_PLUGIN_RPC_BURST` /
   `_PER_SEC` / `_INFLIGHT`) throttles a runaway plugin instead of freezing the
   single-threaded host.
@@ -259,12 +259,12 @@ with no iframe. See [references/server-api.md](references/server-api.md).
   Behavior-affecting operator vars: `TREK_PLUGIN_MAX_RSS_MB` (default 300),
   `TREK_PLUGIN_ALLOW_PRIVATE_EGRESS=on` (lifts the SSRF block on internal
   addresses), `TREK_PLUGIN_PERMISSIONS=off` (weakens the OS fs/child sandbox),
-  `TREK_PLUGIN_REGISTRY_URL` (override registry source); **(≥3.3.0)**
+  `TREK_PLUGIN_REGISTRY_URL` (override registry source);
   `TREK_PLUGINS_DEV_LINK=1` enables the **DEV-ONLY** dev-link workflow
   (link/reload a local build against real data — off by default, **never set in
   production**; see [references/cli.md](references/cli.md#dev-link--run-your-local-build-inside-a-real-instance-330-dev-only)),
   and the RPC-limit knobs `TREK_PLUGIN_RPC_BURST` / `_PER_SEC` / `_INFLIGHT`.
-- **(≥3.3.0) Backups include plugins:** TREK backup/restore now archives each
+- ** Backups include plugins:** TREK backup/restore now archives each
   plugin's per-plugin SQLite data tree **and** installed code (staged and swapped
   in on next boot), so a restore no longer loses plugin state. Older archives
   without them are a no-op.
@@ -283,7 +283,7 @@ that matches your plugin's shape:
   read, the iframe bridge, hand-built inline SVG UI, and a README that passes the
   CI gate. The reference for anything with its own sandboxed UI. Registry entry:
   `registry/plugins/koffi.json` in TREK-Plugins.
-- **`trip-doctor`** (≥3.2.1) — a **hooks-only, no-UI** `integration`: it feeds
+- **`trip-doctor`** — a **hooks-only, no-UI** `integration`: it feeds
   TREK's own planner surfaces through `warningProvider.getWarnings` and
   `placeDetailProvider.getDetails`, and pins private notes via `ctx.meta` behind a
   `POST /pin` route. The reference for the ≥3.2.1 provider-hook + `db:meta`

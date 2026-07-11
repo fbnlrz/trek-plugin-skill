@@ -69,7 +69,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `repo` | `owner/name` (GitHub). Source of truth for the code. |
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
-| `type` | `integration` \| `page` \| `widget` \| `trip-page` **(≥3.2.1)** — all four are in the registry schema's `type` enum and validated by CI and (on the current SDK) local `preflight`. (Historical: SDK ≤ 1.3.x `preflight` wrongly rejected `trip-page`; fixed in 1.4.0.) |
+| `type` | `integration` \| `page` \| `widget` \| `trip-page` — all four are in the registry schema's `type` enum and validated by CI and (on the current SDK) local `preflight`. (Historical: SDK ≤ 1.3.x `preflight` wrongly rejected `trip-page`; fixed in 1.4.0.) |
 | `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |

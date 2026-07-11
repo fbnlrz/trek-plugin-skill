@@ -263,23 +263,23 @@ when a grant is missing.
 export interface MockHostOptions {
   grants?: string[];                        // permissions to grant the ctx
   config?: Record<string, unknown>;         // becomes ctx.config (frozen)
-  actingUserId?: number;                    // (≥3.2.1) host-bound user — required for any costs.*
-  budgetAddonEnabled?: boolean;             // (≥3.2.1) default true; false → RESOURCE_FORBIDDEN
+  actingUserId?: number;                    // host-bound user — required for any costs.*
+  budgetAddonEnabled?: boolean;             // default true; false → RESOURCE_FORBIDDEN
   // (≥3.3.0 / SDK 1.4.0) more addon-enable flags (each defaults true; false → RESOURCE_FORBIDDEN):
   journeyAddonEnabled?; atlasAddonEnabled?; vacayAddonEnabled?; collectionsAddonEnabled?; collabAddonEnabled?: boolean;
-  // (≥3.3.0) inter-plugin + per-user + broker fixtures:
+  // inter-plugin + per-user + broker fixtures:
   pluginExports?; declaredEmits?; userSettings?; tags?; journals?; journalEntries?; collections?;
   atlasVisited?; atlasBucketList?; vacayPlan?; categories?; weatherResult?; ratesResult?; aiText?; aiResults?; oauthAccessToken?;
   /** Fixtures keyed by trip id; `members` gates access like the real host. */
   trips?: Record<number, { members: number[]; data?: unknown;
                            places?: unknown[]; reservations?: unknown[];
-                           costs?: unknown[]; canEditCosts?: boolean;      // (≥3.2.1)
-                           days?: unknown[]; assignments?: unknown[];      // (≥3.2.1)
-                           packing?: unknown[]; files?: unknown[];         // (≥3.2.1) ctx.packing/files.list
-                           accommodations?; bags?; todos?; daynotes?;      // (≥3.3.0)
-                           notes?; polls?; messages?;                      // (≥3.3.0) collab
-                           canEditPlaces?; canEditDays?; canEditTrip?: boolean; // (≥3.3.0) write gates
-                           /** (≥3.3.0) app-right gate keyed by right name:
+                           costs?: unknown[]; canEditCosts?: boolean;      //
+                           days?: unknown[]; assignments?: unknown[];      //
+                           packing?: unknown[]; files?: unknown[];         // ctx.packing/files.list
+                           accommodations?; bags?; todos?; daynotes?;      //
+                           notes?; polls?; messages?;                      // collab
+                           canEditPlaces?; canEditDays?; canEditTrip?: boolean; // write gates
+                           /** app-right gate keyed by right name:
                             *  member_manage, reservation_edit, packing_edit, collab_edit,
                             *  file_upload/file_edit/file_delete (todos ride on packing_edit) */
                            can?: Record<string, boolean> }>;
@@ -290,15 +290,15 @@ export interface MockHostOptions {
 
 export interface MockHost {
   ctx: PluginContext;
-  userlessCtx: PluginContext;                          // (≥3.3.0) the ctx a job/scheduled/event/GDPR handler gets — NO acting user
+  userlessCtx: PluginContext;                          // the ctx a job/scheduled/event/GDPR handler gets — NO acting user
   calls: { method: string; args: unknown[] }[];        // permission-checked call names (db/trips/users/ws — not log).
-                                                       // args is [] for those; (≥3.3.0) settings.get/plugins.call/events.emit push REAL args
+                                                       // args is [] for those; settings.get/plugins.call/events.emit push REAL args
   logs: { level: string; msg: string }[];
   broadcasts: { kind: 'trip' | 'user'; target: number; event: string; data: unknown }[];
-  emitted: { name: string; payload: unknown }[];       // (≥3.3.0) ctx.events.emit records
-  notifications: unknown[];                            // (≥3.3.0) ctx.notify.send records
-  scheduled: Map<string, unknown>;                     // (≥3.3.0) ctx.scheduler timers
-  run(def): PluginDriver;                              // (≥3.3.0) fire the plugin's OWN entry points — see below
+  emitted: { name: string; payload: unknown }[];       // ctx.events.emit records
+  notifications: unknown[];                            // ctx.notify.send records
+  scheduled: Map<string, unknown>;                     // ctx.scheduler timers
+  run(def): PluginDriver;                              // fire the plugin's OWN entry points — see below
 }
 
 export function createMockHost(opts?: MockHostOptions): MockHost;
@@ -350,7 +350,7 @@ Notes:
 
 - The mock db is a **recorder**, not a database: configure `queryResults` for
   canned rows (keyed by the exact SQL string); use an integration test (or the
-  dev server's real SQLite) for real SQL. **(≥3.3.0) it also enforces the host's
+  dev server's real SQLite) for real SQL. ** it also enforces the host's
   statement guards** — `query`/`exec`/`migrate` reject `FORBIDDEN_SQL`
   (`ATTACH`/`DETACH`/`VACUUM`/`PRAGMA`/`RECURSIVE`/`LOAD_EXTENSION`) and > 100k-char
   SQL, and **`db.tx(ops)` is implemented** (≤ 100 ops, each SQL-guarded,
@@ -359,7 +359,7 @@ Notes:
   writes report `{changes:0}`). So tests catch disallowed SQL and exercise
   `db.tx` batches without a real database.
 - `broadcasts` collects `ws.broadcastTo*` calls so you can assert on events
-  without a socket. **(≥3.3.0) both are target-gated like prod:** `broadcastToTrip`
+  without a socket. ** both are target-gated like prod:** `broadcastToTrip`
   refuses without an acting user and membership-checks the trip; `broadcastToUser`
   allows only the acting user themselves. `users.getById` returns **only public
   columns** (`id/username/display_name/avatar`, never email/role) and only for
@@ -368,12 +368,12 @@ Notes:
 - `calls` records the attempt **even when the grant is missing** (the entry is
   pushed before the permission check throws), so a `PERMISSION_DENIED` call still
   appears in `calls`.
-- **(≥3.2.1) Testing `ctx.costs.*`:** set `actingUserId` (the host-bound user)
+- ** Testing `ctx.costs.*`:** set `actingUserId` (the host-bound user)
   and seed `trips[id].costs`. `canEditCosts: false` simulates a missing
   `budget_edit` for `create`; `budgetAddonEnabled: false` simulates the addon
   being off (both → `RESOURCE_FORBIDDEN`). Cover happy-path, missing-grant,
   missing-`budget_edit`, and addon-off cases.
-- **(≥3.3.0) `userlessCtx`** is the ctx a job / scheduled task / event
+- ** `userlessCtx`** is the ctx a job / scheduled task / event
   subscription / GDPR handler receives — bound to **no acting user**. Every
   user-bound read/write on it throws `RESOURCE_FORBIDDEN` ("this call requires an
   authenticated user context"); it shares the same fixtures/grants/recorders.
@@ -381,19 +381,19 @@ Notes:
   `exportUserData` all use it — so test that background handlers **degrade
   gracefully without a user** (fall back to `ctx.config`/`db:own`, not user-bound
   reads).
-- **(≥3.3.0) `notify.send` is fully modelled:** title/body emoji-stripped (an
+- ** `notify.send` is fully modelled:** title/body emoji-stripped (an
   all-emoji title collapses to `''` and is **rejected**), `title` ≤ 200 / `body`
   ≤ 1000 required, `scope` must be `'user'`/`'trip'`, a `'user'` target must
   equal the acting user (else `RESOURCE_FORBIDDEN`), a `'trip'` target is
   membership-checked, `link` must be an in-app `/…` path (not `//…`, ≤ 512).
   Assert on the **`notifications`** array.
-- **(≥3.3.0) member management + per-trip rights:** `addMember`/`removeMember`
+- ** member management + per-trip rights:** `addMember`/`removeMember`
   need `db:write:members` + the fixture's `can.member_manage`, verify the target
   exists, no-op for owner/existing member (`joined:false`), and refuse removing
   the owner. Set `canEditPlaces`/`canEditDays`/`canEditTrip` or a `can` entry
   (`reservation_edit`/`packing_edit`/`collab_edit`/`file_*`) to `false` to test
   the permission-denied write paths.
-- **(≥3.3.0) addon-off pattern generalises:** each of `budgetAddonEnabled` /
+- ** addon-off pattern generalises:** each of `budgetAddonEnabled` /
   `journeyAddonEnabled` / `atlasAddonEnabled` / `vacayAddonEnabled` /
   `collectionsAddonEnabled` / `collabAddonEnabled` (all default true) → set
   `false` to prove your plugin degrades when the addon is disabled
