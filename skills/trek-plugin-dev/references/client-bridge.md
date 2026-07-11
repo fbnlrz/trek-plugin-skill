@@ -59,13 +59,13 @@ window.parent.postMessage(
 | `trek:resize` | `{ height }` | Set iframe height (capped at 2000 px) |
 | `trek:invoke` | `{ requestId, sub, method, body }` | Call your own route (`sub` is the path below `/api/plugins/<id>`, query string allowed); resolves as `trek:response` or `trek:error` |
 | `trek:openExternal` **(host ≥3.2.2)** | `{ url }` | Ask the host to open an `http`/`https` URL in a new browser tab (the sandbox has no `allow-popups`). **≤3.2.1 hosts silently ignore it** (links "do nothing") — always use the fallback chain in [Opening external links](#opening-external-links-trekopenexternal) |
-| `trek:confirm` **(host ≥3.2.2)** | `{ requestId, message, … }` | Ask the host to render a **native** confirm dialog (one at a time; the host always leads the title with the plugin name, so a plugin can't spoof a TREK system dialog). The host answers with `trek:confirm:result` (correlate by `requestId`). **≤3.2.1: no reply ever comes** — pair it with a timeout or an in-frame fallback dialog |
+| `trek:confirm` **(host ≥3.2.2)** | `{ requestId, title?, message, confirmLabel?, cancelLabel?, danger? }` (host-truncated: title ≤120, message ≤500, labels ≤40) | Ask the host to render a **native** confirm dialog (one at a time). The shown title is always `"<pluginName> — <title>"` (just the plugin name if no title), so a plugin can't spoof a TREK system dialog. ⚠️ **`danger` defaults to TRUE** (`danger: msg.danger !== false`) — an unspecified confirm renders **destructive/red**; pass `danger:false` for a neutral one. Host answers with `trek:confirm:result` (correlate by `requestId`). **≤3.2.1: no reply ever comes** — pair with a timeout or an in-frame fallback dialog |
 
 ### Messages TREK sends you (host bridge)
 
 | Message | Payload |
 |---|---|
-| `trek:context` | **3.2.0:** `{ tripId, userId, theme, locale, hostOrigin }`. **≥3.2.1 also sends** `user` (`{name, avatar, isAdmin}` or `null` — never email), `formats` (`{locale, currency, timeFormat, distanceUnit, temperatureUnit, timezone}`), `tokens` (the global palette for the current theme — see §1), and `appearance` (`{scheme, density, reducedMotion, noTransparency}`). `tripId` is **`string \| null`** — `null` for a `page` plugin and a widget with no spotlighted trip, but **set for a `trip-page` tab and a `place-detail` widget** (≥3.2.1). **≥3.2.1 also adds `placeId`** (`string \| null`): the place in view for a `place-detail` widget, else `null`. **≥3.2.2 also adds `dir`** (`'ltr' \| 'rtl'`) for the current locale's writing direction; the kit sets `lang` + `dir` on `<html>` from it, so kit-styled UI is RTL-correct for free (hand-rolled UIs should mirror it themselves). `userId` is a string or `null`. `theme` is `'light'`/`'dark'`. **Re-sent live** on any theme/appearance change (≥3.2.1 watches accent/density/high-contrast/reduced-motion too) — handle **repeated** `trek:context`, not just the first. See [Making the UI feel native](#making-the-ui-feel-native). |
+| `trek:context` | **3.2.0:** `{ tripId, userId, theme, locale, hostOrigin }`. **≥3.2.1 also sends** `user` (`{name, avatar, isAdmin}` or `null` — never email), `formats` (`{locale, currency, timeFormat, distanceUnit, temperatureUnit, timezone}`), `tokens` (the global palette for the current theme — see §1), and `appearance` (`{scheme, density, reducedMotion, noTransparency}`). `tripId` is **`string \| null`** — `null` for a `page` plugin and a widget with no spotlighted trip, but **set for a `trip-page` tab and a `place-detail` widget** (≥3.2.1). **≥3.2.1 also adds `placeId`** (`string \| null`): the place in view for a `place-detail` widget, else `null`. **≥3.3.0 also adds `dayId` and `reservationId`** (`string \| null`) alongside `placeId` — each set only for its own scoped slot (`day-detail` → `dayId`, `reservation-detail` → `reservationId`), else `null`. **≥3.2.2 also adds `dir`** (`'ltr' \| 'rtl'`) for the current locale's writing direction; the kit sets `lang` + `dir` on `<html>` from it, so kit-styled UI is RTL-correct for free (hand-rolled UIs should mirror it themselves). `userId` is a string or `null`. `theme` is `'light'`/`'dark'`. **Re-sent live** on any theme/appearance change (≥3.2.1 watches accent/density/high-contrast/reduced-motion too) — handle **repeated** `trek:context`, not just the first. See [Making the UI feel native](#making-the-ui-feel-native). |
 | `trek:response` | `{ requestId, data }` — successful `trek:invoke` |
 | `trek:error` | `{ requestId, code, message }` — failed `trek:invoke`; `code` is the HTTP status or `"error"` |
 | `trek:confirm:result` **(host ≥3.2.2)** | `{ requestId, confirmed }` — reply to your `trek:confirm` |
@@ -127,8 +127,12 @@ function openExternal(url) {
 - Widget slots (`capabilities.widget.slot`): `sidebar` renders as a dashboard
   card, `hero` as a boarding-pass-bar overlay (TREK >= 3.2.0), and **`place-detail`
   (≥3.2.1)** as a panel in the trip planner's place inspector (trip mode only,
-  gets `placeId`; not shown on the dashboard). A **`trip-page`** *type* (not a
-  widget slot) mounts a full-frame tab inside every trip planner.
+  gets `placeId`; not shown on the dashboard). **≥3.3.0 adds two more scoped
+  slots:** **`day-detail`** (mounts at the foot of the day panel, gets `dayId`)
+  and **`reservation-detail`** (mounts under each reservation/journey card, gets
+  `reservationId`) — both chrome-free scoped cards like `place-detail`. A
+  **`trip-page`** *type* (not a widget slot) mounts a full-frame tab inside every
+  trip planner.
 
 Reference implementation: `plugin-sdk/examples/koffi/client/index.html`
 (single self-contained HTML file: `trek:ready` → `trek:context` →
@@ -156,7 +160,22 @@ void at the opaque origin:
 | `@font-face` from a bundled `.woff2` or Google Fonts | ❌ | `font-src` is `'self' data:` — `'self'` is void, no host allowed |
 | `@font-face` from a `data:` URL | ✅ | `font-src` includes `data:` |
 
-Consequences:
+> **≥3.3.0 re-enables your OWN bundled assets.** In 3.3.0 the per-plugin frame
+> CSP appends a scheme-less **own-path host-source** `<host>/plugin-frame/<id>/`
+> to `script-src`, `style-src`, `img-src`, `font-src` **and** `connect-src`. So
+> the four ❌ own-path rows above flip to **✅ on ≥3.3.0 (own path only)**:
+> `<img src="./logo.png">`, `background-image:url(./x.png)`, inline-SVG
+> `<image href="./x.png">`, and `@font-face` from a bundled `.woff2` all load —
+> and a **multi-file Vite/React build** referencing `./assets/*.js|*.css` works
+> **without inlining**. `'self'` still matches nothing at the opaque origin; it
+> is this explicit own-path source that re-enables them, and **only** when the
+> `Host` header matches `^[a-z0-9.-]+(:\d+)?$` and the id matches
+> `^[a-z][a-z0-9-]{2,39}$` — else it silently falls back to inline-only.
+> **External `https`/CDN hosts stay blocked;** `data:`/`blob:` still work.
+> Keep inlining as the **portable** path: ≤3.2.2 hosts still block these, and the
+> re-allow depends on a well-formed `Host` header.
+
+Consequences (**≤3.2.2 hosts** — for ≥3.3.0 own-path assets, see the note above):
 
 * You **cannot** reference a bundled file by path (`./logo.png`, `client/x.svg`)
   or any external URL for images/fonts — the opaque origin voids `'self'` and no
@@ -408,9 +427,22 @@ Either way, keep the root chrome-free and let the host draw the card.
 
 A `page` plugin is the **opposite**: it renders in a full-page shell with **no**
 host card (`PluginPage.tsx` → a `calc(100vh - nav)` container + a `w-full h-full`
-frame), so you own the whole surface and draw your own layout. Here `trek:resize`
-**does** set the iframe's pixel height (`PluginFrame` applies `Math.min(height,
-2000)`), so you *can* report it on every layout change (e.g. via `ResizeObserver`):
+frame), so you own the whole surface and draw your own layout.
+
+> **≥3.3.0: `page` and `trip-page` frames run in "fill mode" — `trek:resize` is
+> ignored.** 3.3.0 gives both full-page hosts (and the scoped detail frames) a
+> `fill` prop; `PluginFrame` guards resize with `if (!fill && …)`, so for
+> `page` **and** `trip-page` the iframe is locked to **`height:100%` of its
+> container** and reported heights are dropped. Consequence: **own an
+> internal-scroll layout** (a flex child with `overflow:auto`) rather than
+> reporting height — the `ResizeObserver` pattern below and the `trip-page`
+> "cap to viewport" trap are both **no-ops on ≥3.3.0** (and the trip-page
+> clipping trap is resolved host-side by `fill`). Only the **un-filled `sidebar`
+> widget** still uses `trek:resize` for pixel height going forward.
+
+On **≤3.2.2** a `page` frame instead *does* honour `trek:resize` for pixel height
+(`PluginFrame` applies `Math.min(height, 2000)`), so you *can* report it on every
+layout change (e.g. via `ResizeObserver`):
 
 ```js
 var lastH = -1
@@ -421,7 +453,7 @@ function reportHeight(root) {
 if (window.ResizeObserver) new ResizeObserver(() => reportHeight(root)).observe(root)
 ```
 
-> ⚠️ **`trip-page` — do NOT report unbounded content height.** The host mounts a
+> ⚠️ **`trip-page` on ≤3.2.2 — do NOT report unbounded content height.** The host mounts a
 > `trip-page` in a fixed, `position:absolute; overflow:hidden` tab wrapper sized to
 > the planner viewport (`TripPlannerPage.tsx`), and `PluginFrame` sets the iframe to
 > exactly the height you report. Report a height **taller than that viewport and the
