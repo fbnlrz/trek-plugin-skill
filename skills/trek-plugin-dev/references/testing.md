@@ -32,9 +32,12 @@ Fidelity details:
   `reservations`/`plugins`/`events` — **works in dev** under the same
   permission/membership/addon gates as production.
   - ⚠️ **Dev parity is exactly why you must still guard in production code.** Dev has
-    every namespace, and so does any *current* host — but TREK does **not** enforce
-    `minTrekVersion` at install, so an **older** instance can install your plugin and
-    genuinely lack `ctx.meta` (etc.). Dev will never reproduce that. The throw is
+    every namespace, and so does any host inside your `trek` range — which TREK now
+    enforces at install and activation (≥ 3.3.1), so an honest range means the
+    namespaces you call are there. But the gate is **skipped on a host with a
+    non-semver `APP_VERSION`** (Docker's default is the literal `dev`), and such an
+    instance will install your plugin regardless of its age and genuinely lack
+    `ctx.meta` (etc.). Dev will never reproduce that. The throw is
     **synchronous at property access** (so `await attempt(ctx.meta.get(x))` does *not*
     catch it — use a thunk: `attempt(() => ctx.meta.get(x))`). Treat `db:own` as the
     source of truth and mirror to `ctx.meta` best-effort (see

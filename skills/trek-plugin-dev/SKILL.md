@@ -1,6 +1,6 @@
 ---
 name: trek-plugin-dev
-description: Build, test, sign, and publish plugins for TREK, the self-hosted travel planner (github.com/mauriceboe/TREK). Covers the trek-plugin.json manifest, the definePlugin server API and ctx object, the sandboxed iframe postMessage bridge for widget/page UIs, permissions and egress rules, local development with trek-plugin-sdk (create/dev/validate/pack), author signing (keygen/--sign, Ed25519 trust-on-first-use), and publishing to the TREK-Plugins community registry including every CI gate. Use when creating or modifying a TREK plugin, working with trek-plugin-sdk or trek-plugin.json, signing a plugin or handling a signature/key-rotation problem (SIGNATURE_KEY_CHANGED, re-trust, allow-key-change), debugging PERMISSION_DENIED / RESOURCE_FORBIDDEN or registry CI failures, or preparing a TREK-Plugins registry entry or PR.
+description: Build, test, sign, and publish plugins for TREK, the self-hosted travel planner (github.com/mauriceboe/TREK). Covers the trek-plugin.json manifest, the definePlugin server API and ctx object, the sandboxed iframe postMessage bridge for widget/page UIs, permissions and egress rules, the enforced `trek` TREK-version range, local development with trek-plugin-sdk (create/dev/validate/pack), author signing (keygen/--sign, Ed25519 trust-on-first-use), and publishing to the TREK-Plugins community registry including every CI gate. Use when creating or modifying a TREK plugin, working with trek-plugin-sdk or trek-plugin.json, signing a plugin or handling a signature/key-rotation problem (SIGNATURE_KEY_CHANGED, re-trust, allow-key-change), debugging PERMISSION_DENIED / RESOURCE_FORBIDDEN / TREK_VERSION_INCOMPATIBLE / TREK_VERSION_UNKNOWN or a plugin that will not install or activate on a given TREK version, or preparing a TREK-Plugins registry entry or PR.
 ---
 
 # TREK Plugin Development
@@ -164,11 +164,16 @@ inject native UI or honour data-rights with no iframe. See
    `ctx.meta` stores the plugin's own namespaced data on a trip/place/day (reads
    need trip access, writes the entity's edit permission). **Heads-up: these
    enrichment namespaces (`meta`/`places`/`days`/`itinerary`/`costs`/`packing`/`files`/
-   `trips.update`) can be `undefined` on real hosts** — not flakiness, but **version
-   skew**: TREK does *not* enforce `minTrekVersion` at install, so an older instance
-   will install your plugin and simply lack the namespace. Set `"trek": ">=3.3.0
-   <4.0.0"`, and still guard: `db:own` as source of truth, `ctx.meta` only a
-   best-effort mirror, every optional call behind a thunked guard
+   `trips.update`) can be `undefined` on a host that predates them.** Your
+   `"trek"` range is what prevents that, and **since TREK 3.3.1 it is enforced**:
+   an instance outside the range refuses to install *or* activate your plugin. So
+   declare it honestly — `"trek": ">=3.3.1 <4.0.0"` — and the namespaces you need
+   are guaranteed present on every host that can run you.
+   **Still guard anyway**, for the one hole the gate leaves: a host whose
+   `APP_VERSION` is not a semver version (the Docker default is the literal `dev`)
+   cannot be compared to a range, so the check is skipped and an unversioned build
+   installs anything. Keep `db:own` as the source of truth, treat `ctx.meta` as a
+   best-effort mirror, and put every optional call behind a thunked guard
    (`attempt(() => ctx.meta.set(…))` — the thunk also catches the synchronous
    property throw). See
    [server-api.md](references/server-api.md) and
@@ -300,9 +305,18 @@ inject native UI or honour data-rights with no iframe. See
   without them are a no-op.
 - Installed plugins must be activated one by one; a version bump that requests
   **more** permissions requires the admin to re-approve.
-- Current plugin API: `apiVersion: 1` (`PLUGIN_API_VERSION`) — **not enforced at
-  install** (no version negotiation). Artifact limits: 25 MB/file, 50 MB total,
-  4000 zip entries.
+- **The `trek` range is enforced (TREK ≥ 3.3.1), at install AND at activation.**
+  Install is refused on every path (registry, pinned version, update, sideload,
+  dev-link) when the running TREK is outside your range, and *activation* re-checks
+  it — so a plugin installed on 3.3 stops starting once the operator upgrades past
+  the range's upper bound. It stays installed and visible, switched off, with the
+  reason shown. There is **no admin override**: the range is your own statement
+  that the plugin won't work there. `"install latest"` resolves to the newest
+  version this TREK can run, and an update that would drag a working plugin *out*
+  of compatibility is refused rather than performed.
+- Current plugin API: `apiVersion: 1` (`PLUGIN_API_VERSION`) — declared, but **not
+  enforced** at install (no version negotiation; the `trek` range is what actually
+  gates). Artifact limits: 25 MB/file, 50 MB total, 4000 zip entries.
 
 ## Canonical examples
 

@@ -252,15 +252,19 @@ export interface PluginContext {
 > **Why — and it is not flakiness.** On a *current* host every namespace is always
 > defined: the host builds the whole `ctx` unconditionally, and permissions are enforced
 > at call time (`PERMISSION_DENIED`), not by omitting the object. What you are seeing is
-> **version skew**. The server does **not** gate installs on `minTrekVersion` (it is
-> advisory — see [manifest.md](manifest.md)), so an **older TREK will happily install a
-> plugin built against a newer SDK**, and that host's runtime genuinely predates the
-> namespace — so it is missing.
+> **version skew** — a host whose runtime genuinely predates the namespace.
+>
+> Your `"trek"` range is what prevents this, and **since TREK 3.3.1 the server enforces
+> it** at install *and* activation (see [manifest.md](manifest.md)): an instance outside
+> your range cannot install or start your plugin at all.
 >
 > Two consequences:
-> - Set `"trek"` honestly (`">=3.3.0 <4.0.0"`) so the registry advertises the real floor.
->   It will *not* stop an old instance installing you — but it's the only signal there is.
-> - **Still guard**, because nothing enforces that floor. The robust pattern:
+> - Set `"trek"` honestly (`">=3.3.1 <4.0.0"`). It is now load-bearing, not a hint: it is
+>   what *guarantees* the namespaces you call exist on every host that can run you — and
+>   what stops an old instance installing you and failing at runtime.
+> - **Still guard.** The gate is skipped on a host whose `APP_VERSION` is not a semver
+>   version (the Docker default is the literal `dev`), because there is nothing to compare
+>   a range against — so an unversioned build installs anything. The robust pattern:
 >
 > - **`db:own` is the source of truth** for your plugin's own data; mirror into
 >   `ctx.meta` only **best-effort** (so core surfaces that read meta stay
@@ -493,10 +497,12 @@ code**, e.g. `"PERMISSION_DENIED: …"` — catch and match on that.
   only** — the host stores it but does not mount or drive it (like manifest
   `routes[]`). Implement the flow yourself with your own routes: an `auth:false`
   callback whose redirect is a relative in-app path (see Routes).
-- Version compatibility is **not enforced at install**: the server accepts any
-  numeric `apiVersion` (never compared to `PLUGIN_API_VERSION`) and does not gate
-  on `trek`/`minTrekVersion`/`maxTrekVersion` — those are advisory (registry/CI
-  only). An incompatible plugin still installs and simply fails at runtime.
+- Version compatibility: the manifest's **`trek` range IS enforced** (TREK ≥ 3.3.1)
+  at install and at activation, with no admin override — see
+  [manifest.md](manifest.md). `apiVersion` is **not**: the server accepts any
+  numeric value and never compares it to `PLUGIN_API_VERSION`, so the `trek` range
+  is the only thing that actually gates compatibility. The one gap is a host with a
+  non-semver `APP_VERSION` (Docker's default `dev`), where the check is skipped.
 
 ## Outbound HTTP
 

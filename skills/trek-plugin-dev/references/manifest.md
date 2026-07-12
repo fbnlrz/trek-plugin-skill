@@ -12,8 +12,8 @@ registry CI, and the TREK install loader all apply the **same** rules
 | `name` | string | **yes** | Display name; also the nav label for `page` plugins. |
 | `version` | string | **yes** | Semver `\d+.\d+.\d+` with optional pre-release (`1.2.3`, `1.2.3-beta.1`). Must equal the git tag (`v` prefix) of the release. |
 | `type` | string | **yes** | `integration` \| `page` \| `widget` \| `trip-page` — `trip-page` mounts a full-frame tab inside every trip planner (scoped to the open trip), no dashboard presence. |
-| `apiVersion` | number | no | Plugin API version; currently `1` (SDK constant `PLUGIN_API_VERSION`). Defaults to `1`. Must be a number, not a string. **Not enforced at install** — the server accepts any numeric value with no version negotiation. |
-| `trek` | string | no | Supported TREK semver range, e.g. `">=3.3.0 <4.0.0"`. Its lower bound becomes `minTrekVersion` in the registry entry. ⚠️ **The server does not gate installs on `min`/`maxTrekVersion` — it is advisory (registry/CI) only.** So an *older* TREK will happily install your plugin, and on that host any `ctx.*` namespace it predates is simply **`undefined`**. Set the range honestly and guard optional namespaces (see [server-api.md](server-api.md)); `entry` **requires** this field to derive `minTrekVersion`. |
+| `apiVersion` | number | no | Plugin API version; currently `1` (SDK constant `PLUGIN_API_VERSION`). Defaults to `1`. Must be a number, not a string. **Not enforced at install** — the server accepts any numeric value with no version negotiation. `trek` (below) is what actually gates compatibility. |
+| `trek` | string | **yes** | The TREK versions you support, as a semver **range**: `">=3.3.1 <4.0.0"`. **Enforced since TREK 3.3.1, at install *and* activation** — see below. Validated as a *satisfiable* range (`">=4.0.0 <3.0.0"` parses but nothing can satisfy it → rejected). Its lower bound is derived into `minTrekVersion` on the registry entry; never write that by hand. |
 | `author` | string | no | Shown in the store. |
 | `description` | string | no | One-line store summary. **The 200-char cap binds the registry *entry*, not the manifest** — manifest parity never compares `description`, so entry and manifest may legitimately differ. But `buildEntry` copies it verbatim and `validate`/`pack` don't check length, so a > 200-char manifest description fails registry CI **after** you've cut the release. Either keep it ≤ 200 chars here, or hand-shorten the entry's `description` afterwards (allowed). Min 5 chars on the entry side. |
 | `icon` | string | no | lucide-react icon name (default `Blocks`). Shown on the **Admin → Plugins** row/store card. **Note:** a page's top-nav entry uses `name` as its label but a **fixed `Blocks` icon** — the declared `icon` is *not* used for nav. |
@@ -37,6 +37,46 @@ registry CI, and the TREK install loader all apply the **same** rules
 does not consume:** `routes[]` (real routes come from the loaded `definePlugin`
 object) and `capabilities.nav` (a page's nav entry uses top-level `name` as its
 label; the icon is a fixed `Blocks` glyph, not the manifest `icon`).
+
+## The `trek` range is enforced (TREK ≥ 3.3.1)
+
+Older guidance called this advisory. It isn't, and hasn't been since 3.3.1. TREK
+now treats your range as a hard contract, in both directions:
+
+- **Install** is refused when the running TREK is outside it — on *every* path:
+  registry install, a pinned version, an update, a sideloaded `.zip`, and a
+  dev-link. A manifest with **no** range, or an unsatisfiable one, cannot be
+  installed at all.
+- **Activation** re-checks it. This is the half install can't cover: a plugin
+  legitimately installed on TREK 3.3 is still sitting on disk after the operator
+  upgrades to 4.0, and if you declared `<4.0.0` it will now refuse to start. It
+  stays installed and listed, switched off, showing the reason.
+- **There is no admin override.** The range is your own statement that the plugin
+  does not work there, so there is nothing for an operator to verify and wave
+  through (contrast a rotated signing key, which *is* re-trustable).
+
+Two consequences worth designing around:
+
+- **"Install latest" resolves to the newest version this TREK can run**, not the
+  newest you published. Shipping a 2.0.0 that requires TREK 4 does not strand
+  your 3.x users on a broken install — they get 1.9.0. And an **update** that
+  would drag a working plugin out of compatibility is refused rather than
+  performed, so you cannot break an existing install by publishing.
+- **Widen a range only when it is true.** `">=3.2.0"` with no upper bound claims
+  every TREK ever released *and every one still to come*. `"*"` is legal but
+  `trek-plugin validate` warns, because it is nearly always an author who didn't
+  want to think about it.
+
+**The one hole:** a host whose `APP_VERSION` isn't a semver version — the Docker
+build arg defaults to the literal `dev` — cannot be compared against a range, so
+the check is skipped and an unversioned build installs anything. That is why
+guarding optional `ctx.*` namespaces is still worth doing (see
+[server-api.md](server-api.md)), even though an honest range makes them
+guaranteed on every *versioned* host.
+
+Failures surface as `TREK_VERSION_INCOMPATIBLE` (range excludes this TREK) or
+`TREK_VERSION_UNKNOWN` (no range declared) — see
+[publishing.md](publishing.md).
 
 ## Permissions catalog (complete)
 
@@ -173,7 +213,7 @@ deactivate→activate). `scope: user` settings are **not** surfaced to server
   "version": "1.0.0",
   "apiVersion": 1,
   "type": "widget",
-  "trek": ">=3.3.0 <4.0.0",
+  "trek": ">=3.3.1 <4.0.0",
   "author": "You",
   "description": "Live flight status on the dashboard.",
   "icon": "Plane",
@@ -210,7 +250,7 @@ deactivate→activate). `scope: user` settings are **not** surfaced to server
   "license": "MIT",
   "icon": "Luggage",
   "type": "widget",
-  "trek": ">=3.3.0 <4.0.0",
+  "trek": ">=3.3.1 <4.0.0",
   "nativeModules": false,
   "permissions": ["db:read:trips"],
   "capabilities": {
