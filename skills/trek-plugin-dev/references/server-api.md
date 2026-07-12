@@ -191,15 +191,19 @@ export interface PluginContext {
     broadcastToUser(userId: number, event: string, data): Promise<void>;
   };
   // host-mediated brokers — tenant-free services, not DB namespaces
-  notify: { send(input: { title; body; link?; scope: 'user' | 'trip'; targetId }): Promise<void> }; // notify:send — recipient forced to acting user/their trip
+  notify: { send(input: { title; body; link?; scope: 'user' | 'trip'; targetId }): Promise<{ sent: boolean }> }; // notify:send — recipient forced to acting user/their trip
   ai:     { complete(prompt, system?): Promise<{ text: string }>;                                     // ai:invoke — acting user's provider, no key held
-            extract(text, jsonSchema, prompt?): Promise<{ results: unknown }> };                      // 20000-char cap, output is DATA-only
+            extract(text, jsonSchema, prompt?): Promise<{ results: Record<string, unknown>[] }> };    // 20000-char cap, output is DATA-only
   oauth:  { getAccessToken(): Promise<string | null> };  // oauth:client — user-connected service; null when userless/unconnected
   rates:  { get(...): Promise<unknown> };                 // rates:read — currency rates (tenant-free)
   weather:{ get(...): Promise<unknown> };                 // weather:read — by coords, host-cached (tenant-free)
   scheduler: {                                            // jobs:run — persistent, userless, restart-surviving
-    at(name, whenISO, payload?); in(name, seconds, payload?); every(name, seconds, payload?); cancel(name);
-    // caps: ≤100 tasks, name ≤128 chars, payload ≤8 KB, interval ≥60s, ≤1yr out → scheduled({name,payload}, ctx)
+    at(whenMs: number, name: string, payload?): Promise<{ scheduled: boolean }>;   // absolute epoch-ms
+    in(ms: number, name: string, payload?): Promise<{ scheduled: boolean }>;       // once, after ms
+    every(ms: number, name: string, payload?): Promise<{ scheduled: boolean }>;    // repeat every ms (first after ms)
+    cancel(name: string): Promise<{ cancelled: boolean }>;
+    // TIME FIRST, name second. Setting is an UPSERT by name. Caps: ≤100 tasks,
+    // name ≤128 chars, payload ≤8 KB, interval ≥60s, ≤1yr out → scheduled({name,payload}, ctx)
   };
   plugins: { call(pluginId: string, fn: string, args): Promise<unknown> }; // call a dependency's capabilities.provides export (runs as current user)
   events:  { emit(name: string, payload): Promise<void> }; // publish to dependents; name must be in capabilities.emits
@@ -229,7 +233,7 @@ export interface PluginContext {
 | `ctx.trips` roster + lifecycle | **Route handlers only.** `getDays`/`getAccommodations`/`listMine`/`members` are reads (`db:read:trips`). `addMember`/`removeMember` need `db:write:members` **+** `member_manage` — ⚠️ **`addMember` grants trip access**, and the owner can't be removed. `create(input)` needs `db:create:trips` **+** `trip_create` (title required). | `db:read:trips` / `db:write:members` / `db:create:trips` |
 | **Personal-data & addon subsystems** `ctx.collab` / `journal` / `atlas` / `vacay` / `collections` / `daynotes` / `todos` / `tags` / `categories` | **Route handlers only** (userless → `RESOURCE_FORBIDDEN`). Each has a `db:read:<x>` for its reads and a `db:write:<x>` for its writes; `collab`/`journal`/`atlas`/`vacay`/`collections` also require their **addon enabled** (else `RESOURCE_FORBIDDEN`). Scoping: `atlas`/`vacay`/`tags`/`collections`/`journal` act on the **acting user's own** data; `daynotes` writes ride on `day_edit`, `todos` writes on `packing_edit`, `collab` writes on `collab_edit`; `categories.list()` is global reference data. See the manifest catalog for the exact method→scope map. | `db:read:<x>` / `db:write:<x>` |
 | **Host brokers** `ctx.notify` / `ai` / `oauth` / `rates` / `weather` | Host-mediated services, **not** DB namespaces — detailed in "Host-mediated brokers" below. `notify.send` and `oauth.getAccessToken` are acting-user-scoped (route-only); `ai`/`rates`/`weather` are tenant-free (work userless too). | `notify:send` / `ai:invoke` / `oauth:client` / `rates:read` / `weather:read` |
-| `ctx.scheduler.*` | Persistent, **userless**, restart-surviving timers (`at`/`in`/`every`/`cancel`) firing the `scheduled({name, payload}, ctx)` handler. Caps: ≤ 100 tasks, name ≤ 128 chars, payload ≤ 8 KB, interval ≥ 60 s, ≤ 1 yr out. Same grant as declared cron jobs. | `jobs:run` |
+| `ctx.scheduler.*` | Persistent, **userless**, restart-surviving timers firing the `scheduled({name, payload}, ctx)` handler: `at(whenMs, name, payload?)` (absolute epoch-ms), `in(ms, name, payload?)`, `every(ms, name, payload?)`, `cancel(name)` — **time first, name second**; setting is an **upsert by name**. Caps: ≤ 100 tasks, name ≤ 128 chars, payload ≤ 8 KB, interval ≥ 60 s, ≤ 1 yr out. Same grant as declared cron jobs. | `jobs:run` |
 | `ctx.plugins.call` / `ctx.events.emit` | Inter-plugin: `plugins.call(pluginId, fn, args)` invokes a **dependency's** `capabilities.provides` export (runs as the current user); `events.emit(name, payload)` publishes to dependents that subscribed (`name` must be in `capabilities.emits`). Authorized via declared dependency edges. | — (declared deps) |
 | `ctx.ws.broadcastToTrip` | **Route handlers only.** The acting user must be a member of the target trip. Event to the **core TREK app's** trip-room clients as `plugin:<id>:<event>`. | `ws:broadcast:trip` |
 | `ctx.ws.broadcastToUser` | **Route handlers only.** Target **must equal the acting user** (`userId === req.user.id`) — you can only push to the acting user's **own** connections. Event to core clients as `{ type: 'plugin:<id>', event, ...data }`. | `ws:broadcast:user` |
@@ -282,7 +286,7 @@ never holds a key/secret; the host brokers the call:
   ≤ 1000, `link` must be an in-app `/…` path. **Route-only** (needs the acting
   user).
 - **`ctx.ai.complete(prompt, system?)` → `{ text }`** and
-  **`ctx.ai.extract(text, jsonSchema, prompt?)` → `{ results }`** (`ai:invoke`) —
+  **`ctx.ai.extract(text, jsonSchema, prompt?)` → `{ results: object[] }`** (`ai:invoke`) —
   uses the **acting user's** configured provider; 20 000-char cap; the output is
   **data only** (treat it as untrusted text, never as instructions).
 - **`ctx.oauth.getAccessToken()` → `string | null`** (`oauth:client`) — a
