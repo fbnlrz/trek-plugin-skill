@@ -24,10 +24,12 @@ and its community registry
   of the TREK-Plugins repo (entry + README quality gates, **author-signature
   verification** and the signing-downgrade guard), the maintainer-override
   labels, and the update flow.
-- **Signing (and why to do it):** the skill steers authors to `keygen` + `--sign`
-  from v1.0.0 — the sha256 pin only proves the *registry* served those bytes; the
-  signature proves *the author built them*. It also spells out the commitment
-  (signing is a one-way door, TOFU-pinned) and how to look after the key.
+- **Signing (and why to do it):** the skill steers authors to say yes when `publish`
+  offers to sign (and to pass `--sign` in CI, which is never prompted) — the sha256 pin
+  only proves the *registry* served those bytes; the signature proves *the author built
+  them*. It also spells out the commitment: a one-way door you may enter **late**
+  (unsigned → signed breaks nobody) but can never back out of, TOFU-pinned — and how to
+  look after the key.
 
 ## Layout
 

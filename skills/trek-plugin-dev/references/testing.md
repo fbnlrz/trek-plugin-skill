@@ -108,6 +108,15 @@ bash <skill>/skills/trek-plugin-dev/assets/setup.sh            # dev-kit only
 bash <skill>/skills/trek-plugin-dev/assets/setup.sh --web-hook # + a Claude Code web SessionStart hook
 ```
 
+> **For a plain store shot you don't need any of this: `trek-plugin shot` is
+> built in** — it boots `dev`, renders your UI in the themed `/preview` frame and
+> writes a 1600×900 `docs/screenshot.png` (`--dark` for dark, `--no-serve` to shoot
+> a dev server you're already running). It needs Playwright (`npm i -D playwright &&
+> npx playwright install chromium`), which is deliberately not an SDK dependency.
+> Reach for the dev-kit below when you want what the SDK has no equivalent for: the
+> **composed** store image (light + dark cards side by side, title, kicker, feature
+> pills, accent background) and both-theme preview shots in one run.
+
 It adds:
 
 - **`scripts/shot.mjs`** (+ `scripts/store-shot.html`) and npm scripts:
@@ -423,6 +432,11 @@ Notes:
 1. Unit-test route handlers with `createMockHost` — happy path, missing
    grant (`PERMISSION_DENIED`), foreign trip (`RESOURCE_FORBIDDEN`).
 2. Exercise the full loop (routes + UI + fixtures) in `trek-plugin dev`.
-3. Before publishing, run `validate` → `pack` → `preflight` (see
-   [publishing.md](publishing.md)) — preflight replays the registry CI,
-   including the README gate, over the network.
+3. Run **`trek-plugin status`** whenever you're unsure what's left — it grades every
+   registry gate answerable offline and names one next command. `validate` is the
+   same checks with an exit code, for CI.
+4. `trek-plugin publish` then runs those gates itself (step ①) **before** it packs or
+   releases anything, and `preflight` (step ④) replays the gates that need the tag and
+   the release to exist — the artifact's sha256, the manifest and README **at the
+   pinned commit**, owner binding, the signing-downgrade guard. See
+   [publishing.md](publishing.md).

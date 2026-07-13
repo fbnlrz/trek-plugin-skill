@@ -1,6 +1,6 @@
 ---
 name: trek-plugin-dev
-description: Build, test, sign, and publish plugins for TREK, the self-hosted travel planner (github.com/mauriceboe/TREK). Covers the trek-plugin.json manifest, the definePlugin server API and ctx object, the sandboxed iframe postMessage bridge for widget/page UIs, permissions and egress rules, the enforced `trek` TREK-version range, local development with trek-plugin-sdk (create/dev/validate/pack), author signing (keygen/--sign, Ed25519 trust-on-first-use), and publishing to the TREK-Plugins community registry including every CI gate. Use when creating or modifying a TREK plugin, working with trek-plugin-sdk or trek-plugin.json, signing a plugin or handling a signature/key-rotation problem (SIGNATURE_KEY_CHANGED, re-trust, allow-key-change), debugging PERMISSION_DENIED / RESOURCE_FORBIDDEN / TREK_VERSION_INCOMPATIBLE / TREK_VERSION_UNKNOWN or a plugin that will not install or activate on a given TREK version, or preparing a TREK-Plugins registry entry or PR.
+description: Build, test, sign, and publish plugins for TREK, the self-hosted travel planner (github.com/mauriceboe/TREK). Covers the trek-plugin.json manifest, the definePlugin server API and ctx object, the sandboxed iframe postMessage bridge for widget/page UIs, permissions and egress rules, the enforced `trek` TREK-version range, local development with trek-plugin-sdk (create/dev/status/shot/validate/pack), author signing (keygen/--sign, Ed25519 trust-on-first-use), and publishing to the TREK-Plugins community registry including every CI gate. Use when creating or modifying a TREK plugin, working with trek-plugin-sdk or trek-plugin.json, signing a plugin or handling a signature/key-rotation problem (SIGNATURE_KEY_CHANGED, re-trust, allow-key-change), debugging PERMISSION_DENIED / RESOURCE_FORBIDDEN / TREK_VERSION_INCOMPATIBLE / TREK_VERSION_UNKNOWN or a plugin that will not install or activate on a given TREK version, or preparing a TREK-Plugins registry entry or PR.
 ---
 
 # TREK Plugin Development
@@ -32,35 +32,61 @@ Everything is driven by the npm package **`trek-plugin-sdk`** (Node >= 18):
 
 ## Golden path
 
+**create → dev → status → shot → publish.** When you don't know what to do next,
+run `status`: it grades every registry gate that can be answered offline and names
+exactly one next command.
+
 ```bash
 # 1. Scaffold (id must be a lowercase slug, 3–40 chars)
-npx trek-plugin-sdk create my-widget --type widget    # or: page | integration
+npx trek-plugin-sdk create my-widget --type widget    # or: page | trip-page | integration
+#    The scaffold RUNS and PACKS immediately — but it does NOT pass `validate`
+#    (stub README, no screenshot). That's deliberate; `status` says what's missing.
 
 # 2. Develop: edit trek-plugin.json, server/index.js, client/index.html
 cd my-widget
 npx trek-plugin-sdk dev            # http://localhost:4317 — hot reload,
                                    # real permission enforcement, no TREK needed
 
-# 3. Check + build artifact
-npx trek-plugin-sdk validate .
-npx trek-plugin-sdk pack .         # plugin.zip + prints sha256 and size
+# 3. Where am I? (never fails — orientation, not a gate)
+npx trek-plugin-sdk status         # checklist: Manifest / Code / Docs / Release / Repo
+                                   # + "next → <one command>"
 
-# 4. Make a signing key — ONCE, ever, for all your plugins. BACK IT UP.
-npx trek-plugin-sdk keygen         # → ~/.trek-plugin/signing.key
+# 4. The store image the registry requires (needs Playwright — see below)
+npx trek-plugin-sdk shot           # → docs/screenshot.png, 1600×900, in the themed frame
 
-# 5. Publish: public GitHub repo (convention: trek-plugin-<id>),
-#    README filled in, docs/screenshot.png committed, then ONE command:
+# 5. Write the README (4 sections, ≥400 chars of prose, a row per permission),
+#    commit + push, then re-run status until it's green. `validate` is the same
+#    checks with an exit code, for CI.
+
+# 6. Publish: public GitHub repo (convention: trek-plugin-<id>), then ONE command:
 npx trek-plugin-sdk publish --repo you/trek-plugin-my-widget --tag v1.0.0 --sign
-#    = pack → git tag + GitHub release → preflight (registry CI, locally)
-#      → opens the registry PR. Stops before submitting if preflight fails.
-#    Requires git + gh (authed).
+#    = ① check (every offline registry gate) → ② pack → ③ git tag + GitHub release
+#      → ④ preflight (the gates that need the release to exist) → ⑤ registry PR.
+#    If a step-① gate fails, NOTHING is packed, tagged, pushed or released — so you
+#    fix it and re-run against the SAME version. Requires git + gh (authed).
+#    In a TERMINAL, publish OFFERS to sign and creates the key for you — --sign is
+#    only needed in scripts/CI, which are never prompted. (keygen makes the key by
+#    hand: ~/.trek-plugin/signing.key — ONCE, ever, for all your plugins. BACK IT UP.)
 ```
 
-**Sign from v1.0.0.** `--sign` proves the artifact came from *you*, not merely
-that the registry vouched for some bytes — so a compromised registry can't ship
-code under your name. It costs one `keygen` and one flag. Adding it **later** is
-easy; the thing you cannot do is *stop* (see rule 11), so the only decision that
-ever really binds is whether you'll keep the key safe. Back it up and sign.
+**`validate` is a real gate now, and `pack` is not.** `validate` errors on
+everything the registry would reject offline — a lucide icon that doesn't exist, a
+README missing a section / under 400 chars of prose / with placeholders left / with
+an unexplained permission, a screenshot that doesn't resolve to a file on disk, an
+`egress[]` host with no matching `http:outbound:<host>` permission, name/description/
+author outside the registry's length limits. `pack` refuses only what makes a plugin
+*unloadable* (broken manifest, no `server/index.js`, a native binary), because packing
+is how you install into a local TREK to try it — so **a green `pack` is not a green
+`validate`**. See [references/cli.md](references/cli.md).
+
+**Say yes when `publish` offers to sign.** A signature proves the artifact came
+from *you*, not merely that the registry vouched for some bytes — so a compromised
+registry can't ship code under your name. In a terminal `publish` proposes it and
+makes the key for you; in scripts/CI, which are never prompted, pass `--sign`.
+Signing **late is fine** — unsigned → signed at v1.4.0 breaks nobody, because
+nothing is pinned until a signed version installs. The thing you cannot do is
+*stop* (see rule 11), so the only decision that ever really binds is whether
+you'll keep the key safe. Back it up and sign.
 
 Update flow: bump `version` in the manifest, re-pack, new `vX.Y.Z` tag/release,
 then `entry --merge` onto the existing registry file (newest version first) and
@@ -90,20 +116,27 @@ suggestions derived from what the plugin does**:
 
 **2. Show the draft as a screenshot for sign-off** — don't ship on a description:
 
-- **One command:** the dev-kit's `npm run preview-shot` writes
-  `docs/preview-light.png` + `docs/preview-dark.png` (the real widget via
-  `/preview`); `npm run shot` writes the composed store image. Set it up once with
-  [`assets/setup.sh`](assets/setup.sh) (`--web-hook` for Claude Code web). See
+- **The plain shot is now a CLI command:** `npx trek-plugin-sdk shot` boots `dev`,
+  renders your UI in the themed `/preview` frame and writes a 1600×900
+  `docs/screenshot.png` (`--dark` for the dark theme). It needs Playwright, which is
+  **deliberately not an SDK dependency** — `npm i -D playwright && npx playwright
+  install chromium`. An `integration` has no UI, so `shot` refuses: screenshot the
+  TREK surface your plugin *changes* instead (the notification it sends, the badge it
+  adds to a place, its settings page).
+- **For a *composed* store image** — light + dark cards side by side, title, kicker,
+  feature pills, an accent-driven background — the SDK has no equivalent, so use the
+  skill's own kit: [`assets/store-shot.html`](assets/store-shot.html) (set its CONFIG
+  from the choices above: `glow`/`mesh` · `waves`/`dots`/`grid`) driven by
+  [`assets/shot.mjs`](assets/shot.mjs), which also has `--preview` for
+  `docs/preview-light.png` + `docs/preview-dark.png` (both themes in one run — what
+  you show for UI sign-off). Set it up once with [`assets/setup.sh`](assets/setup.sh)
+  (`--web-hook` for Claude Code web) → `npm run preview-shot` / `npm run shot`. See
   [references/testing.md](references/testing.md#dev-kit--screenshots--reproducible-builds-in-one-step).
-- Or drive it headlessly yourself (Chromium/Playwright is preinstalled).
-  Screenshot **both light and dark**.
-- Open `dev`'s themed **`/preview`** (light/dark/accent toggles).
-- **For the composed store image:** the ready-made
-  [`assets/store-shot.html`](assets/store-shot.html) renders both-theme cards +
-  title + feature pills on an accent-driven background (`glow`/`mesh` ·
-  `waves`/`dots`/`grid`) — set its CONFIG from the choices above.
-- Present the image(s), ask *"does this look right?"*, and iterate. The approved
-  shot doubles as the store `docs/screenshot.png`.
+- Either way, open `dev`'s themed **`/preview`** (light/dark/accent toggles) while you
+  iterate, present the image(s), ask *"does this look right?"*, and iterate. The
+  approved shot doubles as the store `docs/screenshot.png` — which is a **hard
+  registry gate**, and `validate`/`status` now fail if it doesn't resolve to a real
+  file on disk.
 
 See [references/testing.md](references/testing.md).
 
@@ -140,10 +173,13 @@ inject native UI or honour data-rights with no iframe. See
    `server/index.js` is plain built JS (`.ts` and `.map` files are stripped by
    `pack`). Client files are pre-built static assets.
 3. **Egress trap:** the runtime network guard and the iframe CSP are built from
-   the **`http:outbound:<host>` permissions**, *not* from `egress[]` (which is
-   only checked for presence). A host listed in `egress[]` but not granted as
-   `http:outbound:<host>` is **silently blocked at runtime**. Keep both lists
-   identical. Bare `http:outbound` alone reaches nothing — **unless you
+   the **`http:outbound:<host>` permissions**, *not* from `egress[]` (which TREK
+   never reads at runtime — it is the consent-screen declaration). A host listed in
+   `egress[]` but not granted as `http:outbound:<host>` used to install, activate,
+   consent and then be **silently blocked at runtime**; **`validate`/`status` now
+   error on it** (`code.egress-reachable`), and the reverse — a reachable host you
+   forgot to declare in `egress[]`, i.e. understating your own network reach — is a
+   warning. Keep both lists identical. Bare `http:outbound` alone reaches nothing — **unless you
    set `operatorEgress: true`**, which waives the non-empty-`egress[]` rule so you
    ship an **empty `egress[]`** and the **admin configures the real hosts at
    runtime** (for plugins whose egress hosts aren't known up front).
@@ -206,11 +242,16 @@ inject native UI or honour data-rights with no iframe. See
    local re-pack — see [references/publishing.md](references/publishing.md).
 7. **README quality gate is a hard CI gate:** sections **What it does /
    Screenshots / Permissions / Setup** (substring-matched, any heading level),
-   ≥ 400 chars of real prose, at least one screenshot whose URL returns
-   `Content-Type: image/*` (a committed file — `data:` URIs don't count), no
+   ≥ 400 chars of real prose (headings, tables, code and links are stripped
+   before counting — it has to be sentences), at least one screenshot whose URL
+   returns `Content-Type: image/*` (a committed file — `data:` URIs don't count), no
    leftover placeholders (`{{…}}`, `REPLACE_ME`, `Describe what/the …`,
    `your-name/trek-plugin`), and **every declared permission string must appear
-   in the README**. See [references/publishing.md](references/publishing.md).
+   in the README**. **All five now fail `validate`/`status` locally** — the SDK ports
+   the registry's `check-readme.mjs` line for line — so you find out before you cut a
+   release, not after. `preflight` re-grades the README **at the pinned commit**, which
+   is what catches the classic green-tree/red-tag: you wrote it and never committed it.
+   See [references/publishing.md](references/publishing.md).
 8. **`docs/` is not shipped** in `plugin.zip` (by design). Commit
    `docs/screenshot.png` to the repo — the store fetches it from GitHub at the
    pinned commit.
@@ -222,15 +263,19 @@ inject native UI or honour data-rights with no iframe. See
     (CI-maintained).
 11. **Sign your plugin — and then never stop.** Signing is technically optional
     (unsigned installs on the sha256 pin alone — one fewer guarantee, not
-    "unsafe"), but **sign anyway**: `keygen` once, `--sign` on every publish. The
-    pin only proves the bytes are what the *registry* served; the signature proves
-    they are what *you* built. It is the difference between trusting the registry
-    and trusting the author, and it is the one security property only you can
-    supply.
-    It is also a **one-way door**, so go in deliberately: once a plugin has shipped
+    "unsafe"), but **sign anyway**: in a terminal `publish` offers it and creates
+    the key; in scripts, `--sign` on every publish. The pin only proves the bytes
+    are what the *registry* served; the signature proves they are what *you* built.
+    It is the difference between trusting the registry and trusting the author, and
+    it is the one security property only you can supply.
+    It is a **one-way door you may walk through late**: unsigned → signed at any
+    version breaks nobody (nothing is pinned until a signed version installs), so
+    "sign from v1.0.0 or never" is simply false. But once a plugin has shipped
     signed, TREK refuses — on every instance that already has it — an update that
     drops the key, changes the key, or ships an unsigned version, and **registry CI
-    blocks all three before merge**. Only a *key rotation* is recoverable (a
+    blocks all three before merge**. `publish` also refuses an unsigned release of
+    an already-signed plugin at **step 1**, before anything is tagged or released.
+    Only a *key rotation* is recoverable (a
     maintainer applies `allow-key-change`; every admin must then re-trust it).
     Dropping the key or shipping an unsigned version has **no override at all**.
     → **Back up `~/.trek-plugin/signing.key`.** Losing it doesn't just cost you the
@@ -241,8 +286,10 @@ inject native UI or honour data-rights with no iframe. See
     — nothing under `capabilities.nav` is consumed. Your `icon` is any lucide
     name and TREK draws it everywhere it renders you (nav, trip tab, widget
     header, settings card, Admin row, store tile). An **unknown name silently
-    falls back to `Blocks`**, so a typo just makes you look generic — `validate`
-    warns, and registry CI rejects it.
+    falls back to `Blocks`**, so a typo just makes you look generic — which is why
+    **`validate` now errors on it** (it used to only warn) and registry CI rejects
+    it. `create` prompts for one, validates it against lucide as you type, and
+    writes a sensible default for the type if you skip it.
 13. **The UI frame loads only its own bundled assets — never external ones.**
     It runs at an opaque origin under a strict CSP where `'self'` matches
     nothing; an explicit **own-path source** allows your `client/` files by

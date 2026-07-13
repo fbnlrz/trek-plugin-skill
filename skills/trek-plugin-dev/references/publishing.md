@@ -47,9 +47,10 @@ immutable in practice; fix things in a new version.
 > byte-identical — but re-packs elsewhere can still differ: **entry order** comes
 > from unsorted directory walks (filesystem-dependent), the **pack-time-inlined
 > design kit** differs per SDK version (`injectTrekUi` rewrites every `.html`),
-> and **CRLF checkouts** change file bytes (fix: commit a `.gitattributes` with
-> `* text=auto eol=lf`). Never assume a local hash matches the released asset —
-> check the asset.
+> and **CRLF checkouts** change file bytes (`create` now scaffolds a
+> `.gitattributes` with `eol=lf` for exactly this reason — if your repo predates
+> that, add one). Never assume a local hash matches the released asset — check the
+> asset.
 
 ## Registry entry schema (`registry/plugins/<id>.json`)
 
@@ -66,7 +67,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
 | `type` | `integration` \| `page` \| `widget` \| `trip-page` — all four are in the registry schema's `type` enum, validated by CI and local `preflight` alike. |
-| `icon` | Optional **lucide** icon name, PascalCase (`"Luggage"`). This is what TREK draws on your **store tile** — the aggregated `dist/index.json` carries no manifests, so the store has nothing else to read, and an entry without one renders a generic `Blocks` glyph. **`entry`/`publish` copy it from the manifest for you** (and on a re-run they refresh it from the manifest, without wiping an icon the entry already carries) — so, unlike `requiredAddons`, there is nothing to hand-add. It is **not** parity-checked against the manifest: like `name`/`description` it's presentation metadata the entry owns, so the two may legitimately differ. CI **rejects** a name lucide doesn't have. |
+| `icon` | Optional **lucide** icon name, PascalCase (`"Luggage"`). This is what TREK draws on your **store tile** — the aggregated `dist/index.json` carries no manifests, so the store has nothing else to read, and an entry without one renders a generic `Blocks` glyph. **`entry`/`publish` copy it from the manifest for you** (and on a re-run they refresh it from the manifest, without wiping an icon the entry already carries) — nothing to hand-add. It is **not** parity-checked against the manifest: like `name`/`description` it's presentation metadata the entry owns, so the two may legitimately differ. CI **rejects** a name lucide doesn't have. |
 | `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |
@@ -89,8 +90,8 @@ Per version — required: `version`, `gitTag`, `commitSha`, `downloadUrl`,
 | `signature` | Optional base64 **raw Ed25519** signature (the 64-byte sig) over the artifact bytes; requires `authorPublicKey` on the entry. |
 | `publishedAt` | Optional ISO date-time. |
 | `operatorEgress` | Optional boolean. **`entry` copies it from the manifest automatically** (emitted only when `true`) and `preflight` replays the parity check — no hand-editing. **Must mirror the manifest** (registry parity gate). Allows an empty `egress[]`; the admin supplies the hosts at runtime. Requires an `http:outbound` permission. |
-| `requiredAddons` | Optional array (≤ 16) of addon ids (`^[a-z][a-z0-9_]{1,39}$`, e.g. `["budget"]`) that must be enabled in TREK for this version to activate. **Must mirror the manifest** (parity gate). |
-| `pluginDependencies` | Optional array (≤ 32) of `{ id, version }` — other plugins this version needs, each pinned by a semver range (`id` `^[a-z][a-z0-9-]{2,39}$`, `version` a range string ≤ 100 chars). **Must mirror the manifest** (parity gate). |
+| `requiredAddons` | Optional array (≤ 16) of addon ids (`^[a-z][a-z0-9_]{1,39}$`, e.g. `["budget"]`) that must be enabled in TREK for this version to activate. **Must mirror the manifest** (parity gate) — **`entry`/`publish` copy it from the manifest for you**; nothing to hand-add. |
+| `pluginDependencies` | Optional array (≤ 32) of `{ id, version }` — other plugins this version needs, each pinned by a semver range (`id` `^[a-z][a-z0-9-]{2,39}$`, `version` a range string ≤ 100 chars). **Must mirror the manifest** (parity gate) — **copied from the manifest by `entry`/`publish`**. |
 
 `trek-plugin entry --repo <o/n> --tag <vX.Y.Z>` computes all derived fields;
 `--merge existing.json` prepends a new version for updates. The canonical
@@ -98,27 +99,41 @@ shape is `schema/example-entry.json`; the authority is
 `schema/plugin-entry.schema.json` (additionalProperties: false — no extra
 keys).
 
-> **Trap — the SDK's `entry` does NOT copy `requiredAddons`/`pluginDependencies`.**
-> `buildEntry` fills only `homepage`/`tags`/`authorPublicKey`/`operatorEgress`/`icon`
-> beyond the core fields, so if you declare `requiredAddons`/`pluginDependencies`
-> in `trek-plugin.json` you must **hand-add the identical arrays to the entry** or
-> the registry's parity gate fails
-> (`manifest requiredAddons != entry requiredAddons`). Declare neither and both
-> default to `[]` — you're unaffected. (**`operatorEgress` and `icon` are the
-> exceptions among these registry fields — `entry`/`preflight` copy them from the
-> manifest automatically, so never hand-edit them.**) **TREK enforces the deps at activation**:
-> a plugin whose required addon is disabled (or whose plugin dependency is
-> missing/mismatched) can't activate, disabling an addon cascades to dependent
-> plugins, dependency cycles are rejected, and installing from the registry
-> **auto-installs declared plugin dependencies** (`dependencies.ts`,
-> `registry.installWithDependencies`). `preflight` **does** replay the
-> dependency-parity gate, so a missing array is caught locally before you PR.
+> **`entry` mirrors every parity-checked field for you — hand-add nothing.**
+> `buildEntry` used to omit `requiredAddons`/`pluginDependencies`, so **any** plugin
+> with an addon dependency produced an entry CI rejected
+> (`manifest requiredAddons != entry requiredAddons`) — after the release was
+> immutable. **That is fixed**: `entry`/`publish` now copy `requiredAddons`,
+> `pluginDependencies`, `operatorEgress` and `icon` straight out of the manifest.
+> Older guidance told you to paste the arrays in by hand; don't — hand-editing them
+> is now only a way to *break* parity. (`preflight` replays the parity gate both
+> offline and against the manifest at the pinned commit, so a mismatch — e.g. from a
+> hand-edited or `--merge`d entry — is still caught before you PR.)
+> **TREK enforces the deps at activation**: a plugin whose required addon is disabled
+> (or whose plugin dependency is missing/mismatched) can't activate, disabling an
+> addon cascades to dependent plugins, dependency cycles are rejected, and installing
+> from the registry **auto-installs declared plugin dependencies**
+> (`dependencies.ts`, `registry.installWithDependencies`).
 
 ## CI gates
 
 Every PR runs `scripts/validate-entry.mjs` and `scripts/check-readme.mjs` on
 each changed `registry/plugins/*.json` (both on **Node 20**). Each is a hard
-gate; `preflight` replays them locally. On merge, `publish.yml` regenerates
+gate.
+
+**Nearly all of them are now checked *before* you release.** The SDK's check
+registry declares each gate once and runs it at the depth the command can afford:
+`status`/`validate` (and `publish`'s **first** step) run every gate that is a pure
+function of your working tree — the manifest and README rules, the egress trap, the
+icon name, the screenshot resolving to a real file. Only six genuinely need the
+network — the tag resolving to the pinned commit, the released artifact
+downloading/hashing/verifying, the manifest and README **at the pinned commit**,
+owner binding, and the signing-downgrade guard — and those run in `preflight`
+(`publish` step ④). So a green `validate` plus a green `preflight` is a green CI,
+bar the entry's full JSON-schema check (unknown/extra keys), which only bites a
+hand-edited entry.
+
+On merge, `publish.yml` regenerates
 `dist/index.json` (plugins sorted by `id`, each `versions[]` newest-first, plus a
 `dist/index.json.sha256` sidecar) and stamps `reviewedAt` — **a PR must only
 add/change your one entry file, never `dist/`**.
@@ -138,8 +153,8 @@ runs schema/format checks only.)
 | Release tag | `gitTag` doesn't exist or doesn't resolve to `commitSha` | Push the tag; re-run `entry` |
 | Manifest parity | `id`/`version`/`type`/`apiVersion`/`trek`/`nativeModules` in the repo's `trek-plugin.json` **at `commitSha`** differ from the entry (or `nativeModules: true`) | Align manifest and entry; retag |
 | TREK version range | The published version's manifest declares no `trek` range, or an unsatisfiable one (`">=4.0.0 <3.0.0"`); or the entry's `trek` ≠ the manifest's; or a (deprecated) `minTrekVersion` is present and ≠ that range's lower bound. Versions published *before* the field existed are grandfathered | Declare a real range and re-run `entry`. TREK will not install a plugin without one, so this gate is only telling you early |
-| Dependency parity | The entry's `requiredAddons` or `pluginDependencies` (sorted/normalized) differ from the manifest's at `commitSha` — including the common case where you declared them in the manifest but the SDK's `entry` didn't copy them, so the entry has `[]` | Hand-add the identical `requiredAddons`/`pluginDependencies` arrays to the entry |
-| Icon name | The entry's `icon` is not a real lucide icon name (a typo like `"Luggagee"`, or lowercase `"luggage"` — the schema also pins PascalCase). Absent is fine. **This gate exists because the failure is otherwise silent:** TREK falls back to `Blocks` on an unknown name, so nothing errors at install and your plugin just looks generic in the store | Fix the manifest's `icon` to a real name from <https://lucide.dev/icons> and re-run `entry` (`validate` warns about it locally, before you cut the release) |
+| Dependency parity | The entry's `requiredAddons` or `pluginDependencies` (sorted/normalized) differ from the manifest's at `commitSha`. Since `entry` now copies both from the manifest, this only fires on a hand-edited or stale `--merge`d entry | Regenerate the entry with `trek-plugin entry` rather than editing the arrays |
+| Icon name | The entry's `icon` is not a real lucide icon name (a typo like `"Luggagee"`, or lowercase `"luggage"` — the schema also pins PascalCase). Absent is fine. **This gate exists because the failure is otherwise silent:** TREK falls back to `Blocks` on an unknown name, so nothing errors at install and your plugin just looks generic in the store | Fix the manifest's `icon` to a real name from <https://lucide.dev/icons> and re-run `entry`. **`validate`/`status` now *error* on it** (they used to only warn), so this never reaches CI unless you skipped the checks |
 | Artifact hash / over-size | Downloaded asset's SHA-256 ≠ `sha256`, or the bytes are **> ~4 KB larger** than declared `size` (`buf.length > size + 4096`) — no lower-bound check; the 1–50 MB range is a separate *schema* check on the declared `size` | Never touch released assets; cut a new version |
 | Native binary scan | `.node`, `binding.gyp`, or a `prebuild(s)/` path inside the artifact (**zip or tar.gz**) | Remove native deps; repack |
 | Egress | Any `http:outbound*` permission with `egress[]` missing/empty **and `operatorEgress` not `true`**; a bare `*` in `egress`; `operatorEgress` parity mismatch vs the manifest; or `operatorEgress` without an `http:outbound` permission | Declare explicit hosts, or set `operatorEgress: true` in **both** manifest and entry |
@@ -179,6 +194,12 @@ that already has the plugin, so merging one is simply a broken entry.
 
 ### README gates (`check-readme.mjs`, fetched from your repo at the pinned commit)
 
+The SDK ports these **line for line** and runs them offline in `status`/`validate`
+against your working tree, and again in `preflight` against the README **at the
+pinned commit**. The two disagree exactly when you wrote the README and didn't
+commit it — a green tree and a red tag — which is the failure the network pass
+exists to catch.
+
 | Gate | Requirement |
 |---|---|
 | Exists | `README.md` at the repo root |
@@ -192,6 +213,14 @@ Model README: `plugin-sdk/examples/koffi/README.md` (TREK repo) — note its
 Permissions section is a table with one row per permission explaining why.
 
 ### Store preview image (`docs/screenshot.png`)
+
+**`trek-plugin shot` writes one for you** — it boots `dev`, renders your plugin in
+the themed `/preview` frame TREK actually uses, and saves a 1600×900
+`docs/screenshot.png` (`--dark` for the dark theme). It needs Playwright, which is
+deliberately not an SDK dependency: `npm i -D playwright && npx playwright install
+chromium`. An `integration` has no UI to render, so `shot` refuses — screenshot the
+TREK surface your plugin *changes* instead. Everything below still applies to what
+makes a *good* shot.
 
 CI enforces **no dimensions** — `check-readme.mjs` only checks that an image
 reference in the README resolves to a real image at the pinned commit. Size it
@@ -230,7 +259,7 @@ Keep the composition centred for the card crop. A ready-to-edit template that
 produces exactly this shot ships with the skill:
 [`assets/store-shot.html`](../assets/store-shot.html).
 
-## Signing — do it, starting at v1.0.0
+## Signing — `publish` offers it, and you can adopt it late
 
 **Sign every plugin you publish.** It is technically optional (an unsigned plugin
 installs on its sha256 pin alone, and unsigned is not "unsafe" — it is simply **one
@@ -249,11 +278,16 @@ flag.
 
 Two things make this an easy call:
 
-- **It is cheap.** `keygen` once, ever, for all your plugins; then `--sign` on publish.
-- **Adopting it later is fine — but you can never stop.** Signing is a one-way door (see
-  below). So the only question that actually binds you is *"can I keep a key safe?"* If
-  yes, sign from the first release, because an unsigned v1.0.0 is a version anyone who
-  installs it will hold on trust-on-first-use forever.
+- **It is cheap, and you are asked.** Run in a terminal, `publish` **proposes signing**:
+  it explains the tradeoff, offers to create the key inline if you have none (printing the
+  `authorPublicKey`, telling you to back the private key up), and lists a `sign` line in
+  the confirmation summary. You need not know `keygen` or `--sign` exist. **Scripts and CI
+  are never prompted** — they pass `--sign`, exactly as before.
+- **Adopting it later is fine — but you can never stop.** **Unsigned → signed at any
+  version breaks nobody**: nothing is pinned until a signed version installs, so a key
+  added at v1.4.0 is a real, safe option. (Any doc claiming you must "sign from v1.0.0 or
+  never" is wrong.) Signed → unsigned is what's forbidden, forever — a one-way door (see
+  below). So the only question that actually binds you is *"can I keep a key safe?"*
 
 `authorPublicKey` is the base64 Ed25519 public key; each `signature` is base64 over the
 artifact bytes. The key is **pinned on first install (TOFU)**, and the signature is
@@ -268,19 +302,27 @@ the SDK emits (32-byte key / 64-byte signature) **or** minisign-framed payloads 
 (a plain string compare), so pick one and stay with it — easiest is to just use the SDK:
 
 ```bash
-npx trek-plugin-sdk keygen        # once → ~/.trek-plugin/signing.key (BACK IT UP)
 npx trek-plugin-sdk publish --repo you/repo --tag v1.2.0 --sign
+# In a terminal, --sign is optional: publish asks, and runs keygen for you.
+# `keygen` standalone still works — once → ~/.trek-plugin/signing.key (BACK IT UP).
 ```
 
 `keygen`/`sign` accept `--key <file>`; `--sign` on `entry`/`release`/`submit`/
 `publish` writes `authorPublicKey` + `signature` into the entry (the standalone
 `sign [zip]` command only **prints** them).
 
-### Signing is a one-way door
+### Signing is a one-way door (that you may enter late)
 
-Once a plugin has shipped signed, TREK **refuses**, on every instance that already has
-it, an update that (a) drops the key, (b) is signed with a *different* key, or (c) has no
-signature. CI blocks all three before merge (see the gate table).
+Entering it late is free: an unsigned plugin pins nothing, so the first *signed* version is
+what every instance TOFUs on, whenever it lands.
+
+Backing out is impossible. Once a plugin has shipped signed, TREK **refuses**, on every
+instance that already has it, an update that (a) drops the key, (b) is signed with a
+*different* key, or (c) has no signature. CI blocks all three before merge (see the gate
+table), and **`publish` now refuses an unsigned release of an already-signed plugin at
+step 1** — before anything is packed, tagged or released. (That guard used to live only in
+`preflight`, step 4, which runs *after* the immutable GitHub release is cut: the author
+learned their update had to be signed with the tag already burned.)
 
 So **rotating a key is not a routine release.** Every existing install stops updating
 until an admin explicitly **re-trusts** the new key in TREK's admin UI.

@@ -15,17 +15,17 @@ registry CI, and the TREK install loader all apply the **same** rules
 | `apiVersion` | number | no | Plugin API version; currently `1` (SDK constant `PLUGIN_API_VERSION`). Defaults to `1`. Must be a number, not a string. **Not enforced at install** — the server accepts any numeric value with no version negotiation. `trek` (below) is what actually gates compatibility. |
 | `trek` | string | **yes** | The TREK versions you support, as a semver **range**: `">=3.4.0 <4.0.0"`. **Enforced since TREK 3.4.0, at install *and* activation** — see below. Validated as a *satisfiable* range (`">=4.0.0 <3.0.0"` parses but nothing can satisfy it → rejected). It is the **only** compatibility field the registry entry needs — `entry` copies it verbatim, and the older `minTrekVersion`/`maxTrekVersion` are deprecated (they only restated the lower bound, and could not express an exclusive ceiling). |
 | `author` | string | no | Shown in the store. |
-| `description` | string | no | One-line store summary. **The 200-char cap binds the registry *entry*, not the manifest** — manifest parity never compares `description`, so entry and manifest may legitimately differ. But `buildEntry` copies it verbatim and `validate`/`pack` don't check length, so a > 200-char manifest description fails registry CI **after** you've cut the release. Either keep it ≤ 200 chars here, or hand-shorten the entry's `description` afterwards (allowed). Min 5 chars on the entry side. |
-| `icon` | string | no | A **lucide** icon name in PascalCase (`"Stethoscope"`, `"Luggage"`) — **any** of lucide's ~1435 icons, not a curated subset. Defaults to `Blocks`. TREK resolves it wherever it draws your plugin: the desktop navbar and mobile bottom nav (page plugins), the trip-planner tab (trip-page), the dashboard widget header, your settings card, the Admin → Plugins row, **and the store tile** (that last one reads the *registry entry's* `icon`, which `entry`/`publish` copy from this field — see [publishing.md](publishing.md)). **An unknown name silently falls back to `Blocks`** — nothing errors, so a typo just makes your plugin look generic. `trek-plugin validate` warns on a name lucide doesn't have, and registry CI **rejects** one. |
+| `description` | string | no | One-line store summary. **The 200-char cap binds the registry *entry*, not the manifest** — manifest parity never compares `description`, so entry and manifest may legitimately differ. But `buildEntry` copies it verbatim, so a manifest description outside **5–200 chars** (or missing entirely — `entry` defaults it to `""`, which trips the schema's `minLength: 5` with an error that names the *entry*, not the manifest that caused it) would fail registry CI. **`validate`/`status` now error on all three cases locally** (they used to check nothing), so it no longer reaches CI. Either keep it 5–200 chars here, or hand-shorten the entry's `description` afterwards (allowed). Same offline check also caps `name` at 2–60 and `author` at 80, and rejects a **homoglyph** `name` (Latin mixed with Cyrillic/Greek). |
+| `icon` | string | no | A **lucide** icon name in PascalCase (`"Stethoscope"`, `"Luggage"`) — **any** of lucide's ~1435 icons, not a curated subset. Defaults to `Blocks`. TREK resolves it wherever it draws your plugin: the desktop navbar and mobile bottom nav (page plugins), the trip-planner tab (trip-page), the dashboard widget header, your settings card, the Admin → Plugins row, **and the store tile** (that last one reads the *registry entry's* `icon`, which `entry`/`publish` copy from this field — see [publishing.md](publishing.md)). **An unknown name silently falls back to `Blocks`** — nothing errors, so a typo just makes your plugin look generic. That silence is why **`trek-plugin validate` now *errors*** on a name lucide doesn't have (it used to warn), matching registry CI, which rejects one. `create` prompts for an icon, validates it against lucide as you type, and writes a sensible default for the type if you skip it — so a scaffolded plugin no longer ships icon-less. |
 | `homepage` | string | no | Project URL. |
 | `license` | string | no | Shown in store detail; read, not enforced. |
 | `nativeModules` | boolean | no | Must be `false` or absent; `true` is rejected everywhere ("native modules are not allowed (v1)"). |
 | `permissions` | string[] | no | Only known permissions (below); an unknown string fails validation. |
 | `egress` | string[] | conditional | Required non-empty when any `http:outbound` permission is present. No bare `"*"`. Hosts must match the host grammar (below). **Exception:** with `operatorEgress: true` an **empty `egress[]` is allowed** — see the next row. |
-| `operatorEgress` | boolean | no | Defers the outbound allow-list to the operator. When `true`, an **empty `egress[]` passes validation** even though an `http:outbound*` permission is present (the normal "non-empty when `http:outbound*`" rule is waived), because the **admin adds the actual egress hosts at runtime**. Use it for plugins whose reachable hosts aren't known at authoring time (user-supplied endpoints, a self-hosted backend the admin points at). You still declare an `http:outbound` permission (validation fails without one). **Unlike `requiredAddons`/`pluginDependencies`, the SDK's `entry`/`preflight` copy `operatorEgress` into the entry automatically** — no hand-editing needed; the registry parity-checks that entry and manifest agree. |
-| `requiredAddons` | string[] | no | Addon ids (`^[a-z][a-z0-9_]{1,39}$`, ≤ 16, e.g. `["budget"]`) that must be enabled in TREK. Validated by the SDK (`validateManifest`) and **enforced by TREK at activation** — a plugin whose required addon is off can't activate, and disabling the addon later cascades (`dependencies.ts`). The registry's **parity gate** requires the entry to carry the **identical** array — and the SDK's `entry` still does **not** copy it into the entry, so add it there by hand. See [publishing.md](publishing.md). |
-| `pluginDependencies` | object[] | no | `{ id, version }[]` (≤ 32) — other plugins this version needs, each pinned by a semver range (`id` `^[a-z][a-z0-9-]{2,39}$`, `version` ≤ 100 chars). Same status as `requiredAddons`: **enforced at activation** (missing/mismatched dep blocks activation; registry installs auto-install declared deps; cycles rejected), parity-gated in the registry, and **not copied by `entry`** — mirror it in the entry by hand. |
-| `capabilities.widget` | object | no | `{ "title": string, "slot": …, "defaultSize": … }`. Optional even for widget plugins as far as validation goes; when present, `slot` must be `sidebar` (default), `hero`, **`place-detail`**, or **`day-detail` / `reservation-detail`** — any other value is rejected. Scoped slots each mount a chrome-free panel and get an extra id in `trek:context`: `place-detail` → `placeId` (place inspector), **`day-detail` → `dayId`** (foot of the day panel), **`reservation-detail` → `reservationId`** (under each reservation/journey card). None appear on the dashboard. **Scaffold gotcha:** `create` writes `{ title, defaultSize: "medium" }` **without `slot`**, so a new widget defaults to `sidebar` — add `"slot": "hero"` yourself if you want the boarding-pass overlay. `defaultSize` is declarative only: the dashboard renders `sidebar` widgets in a **fixed ~180px, `overflow-hidden` slot** regardless, so build compact (see [server-api.md](server-api.md) / client-bridge.md). |
+| `operatorEgress` | boolean | no | Defers the outbound allow-list to the operator. When `true`, an **empty `egress[]` passes validation** even though an `http:outbound*` permission is present (the normal "non-empty when `http:outbound*`" rule is waived), because the **admin adds the actual egress hosts at runtime**. Use it for plugins whose reachable hosts aren't known at authoring time (user-supplied endpoints, a self-hosted backend the admin points at). You still declare an `http:outbound` permission (validation fails without one). The SDK's `entry`/`preflight` copy `operatorEgress` into the entry automatically (as they now do for `requiredAddons`/`pluginDependencies`/`icon`) — no hand-editing needed; the registry parity-checks that entry and manifest agree. |
+| `requiredAddons` | string[] | no | Addon ids (`^[a-z][a-z0-9_]{1,39}$`, ≤ 16, e.g. `["budget"]`) that must be enabled in TREK. Validated by the SDK (`validateManifest`; `validate` also *warns* on an addon id TREK doesn't have — it can never be enabled, so the plugin would never activate) and **enforced by TREK at activation** — a plugin whose required addon is off can't activate, and disabling the addon later cascades (`dependencies.ts`). The registry's **parity gate** requires the entry to carry the **identical** array — **`entry`/`publish` now copy it for you** (they didn't use to, which failed CI for every plugin with an addon dependency), so never hand-add it. See [publishing.md](publishing.md). |
+| `pluginDependencies` | object[] | no | `{ id, version }[]` (≤ 32) — other plugins this version needs, each pinned by a semver range (`id` `^[a-z][a-z0-9-]{2,39}$`, `version` ≤ 100 chars). Same status as `requiredAddons`: **enforced at activation** (missing/mismatched dep blocks activation; registry installs auto-install declared deps; cycles rejected), parity-gated in the registry, and — like `requiredAddons` — **now mirrored into the entry by `entry`/`publish`**. |
+| `capabilities.widget` | object | no | `{ "title": string, "slot": …, "defaultSize": … }`. Optional even for widget plugins as far as validation goes; when present, `slot` must be `sidebar` (default), `hero`, **`place-detail`**, or **`day-detail` / `reservation-detail`** — any other value is rejected. Scoped slots each mount a chrome-free panel and get an extra id in `trek:context`: `place-detail` → `placeId` (place inspector), **`day-detail` → `dayId`** (foot of the day panel), **`reservation-detail` → `reservationId`** (under each reservation/journey card). None appear on the dashboard. **`create` now asks for the slot and writes it explicitly** (it used to emit `{ title, defaultSize }` with no `slot`, so a widget meant for a place's detail panel silently appeared in the trip sidebar instead, with nothing anywhere to say why). Omitting `slot` by hand still means `sidebar` — write it. `defaultSize` is declarative only: the dashboard renders `sidebar` widgets in a **fixed ~180px, `overflow-hidden` slot** regardless, so build compact (see [server-api.md](server-api.md) / client-bridge.md). |
 | `capabilities.tripPage` | object | no | For a `type:"trip-page"` plugin. `replaces: string[]` **hides** core planner tabs while the plugin is active — only these are replaceable: `transports`, `buchungen`, `listen`, `finanzplan`, `dateien`, `collab` (the **`plan` tab can never be replaced**; an unlisted value throws at install). `position: number` sets the plugin tab's preferred 0-based index (integer 0–50; omitted = appended after core tabs). This is the mechanism for a full **tab-takeover** trip-page. |
 | `capabilities.provides` | string[] | no | Callable export names this plugin exposes to its **dependents** via `ctx.plugins.call` (safe identifiers, de-duplicated + name-validated at install). The counterpart to `pluginDependencies` (the consuming side). |
 | `capabilities.emits` | string[] | no | Event names this plugin publishes to dependents via `ctx.events.emit` (dotted names like `rate.updated` allowed). Drives the host's `subscribersOf` routing. |
@@ -33,10 +33,20 @@ registry CI, and the TREK install loader all apply the **same** rules
 | `actions` | object[] | no | Up to **8 settings-page buttons** ("Test connection"-style). Each renders on the plugin's user-settings page and runs **user-bound** via `POST /api/plugin-settings/<id>/action`; the handler's result is normalized to `{ ok, message }` (message emoji-stripped, ≤ 200 chars). Test with the mock host's `declaredActions` + driver `action(key)` — see [testing.md](testing.md). |
 | `capabilities.notificationChannel` | object | no | Declares an `integration` as a **notification delivery channel** — `{ title?: string, events: [...] }`. Each event must be one of the **10 plugin-deliverable** events (`trip_invite`, `booking_change`, `trip_reminder`, `todo_due`, `vacay_invite`, `collection_invite`, `photos_shared`, `collab_message`, `packing_tagged`, `plugin_notification`) — admin-scoped/in-app-only events are excluded. **Requires the `hook:notification-channel` permission** (validation fails without it) and a `hooks.notificationChannel` implementation; `create` ships a `notification-channel` template. See [server-api.md](server-api.md). |
 
-**Declarative-only keys the scaffold writes but the installed-manifest parser
-does not consume:** `routes[]` (real routes come from the loaded `definePlugin`
-object) and `capabilities.nav` — a page's nav entry is built from top-level `name`
-(label) and top-level `icon` (glyph), not from anything under `capabilities.nav`.
+**Declarative-only keys the installed-manifest parser does not consume:**
+`routes[]` (real routes come from the loaded `definePlugin` object) and
+`capabilities.nav` — a page's nav entry is built from top-level `name` (label) and
+top-level `icon` (glyph), not from anything under `capabilities.nav`. **`create` no
+longer writes either**, precisely because they look load-bearing and aren't; you'll
+still meet them in older plugins and in example manifests (koffi's `routes[]` block
+is documentation for readers). Adding them is harmless — and pointless.
+
+**What a fresh scaffold gives you:** a manifest with a real `icon`, an explicit
+widget `slot`, `"trek": ">=3.4.0 <4.0.0"`, empty `requiredAddons`/`pluginDependencies`,
+a `docs/` dir, and a `.gitattributes` (`eol=lf`, so an artifact re-packed on Windows
+still hashes the same). It **runs** (`dev`) and **packs** immediately, but it does
+**not** pass `validate` — the README is a stub and there is no screenshot. That is
+deliberate; `trek-plugin status` tells you exactly what is left.
 
 ## The `trek` range is enforced (TREK ≥ 3.4.0)
 
@@ -150,18 +160,24 @@ Failures surface as `TREK_VERSION_INCOMPATIBLE` (range excludes this TREK) or
 > markers, PDF sections, atlas layers, journal rows, trip-card badges, table
 > columns) with no iframe of its own.
 
-### The egress trap (most common runtime bug)
+### The egress trap (was the most common runtime bug — now a hard local error)
 
 Both network guards (runtime egress guard in the child process, CSP
 `connect-src` in the iframe) are built **from the `http:outbound:<host>`
-permissions — not from `egress[]`**. The validator only checks `egress[]` for
-presence, non-emptiness, no bare `*`, and per-host grammar; it never
-cross-checks the two lists.
+permissions — not from `egress[]`**, which TREK **never reads at runtime at all**:
+it is the declaration the admin sees on the consent screen.
 
 Consequence: a host in `egress[]` without a matching `http:outbound:<host>`
-permission passes validation and install, then every request to it is refused
-at runtime with no manifest error. **Rule: list every host you call as *both*
-an `http:outbound:<host>` permission *and* an `egress[]` entry, identical.**
+permission used to pass validation, install, activate, consent — and then have
+every request to it silently refused, with no manifest error anywhere. The author
+found out from a production timeout. **`validate`/`status` now ERROR on it**
+(`code.egress-reachable`: *"these hosts are declared but unreachable"*, and it
+prints the permission strings to add). The mirror image — a host you *granted*
+`http:outbound:<host>` but left out of `egress[]`, i.e. understating your own
+network reach on the consent screen — is a **warning**.
+
+**Rule, unchanged: list every host you call as *both* an `http:outbound:<host>`
+permission *and* an `egress[]` entry, identical.**
 
 **Exception — operator-managed egress:** set top-level
 `operatorEgress: true` and the non-empty-`egress[]` requirement is **waived** —
