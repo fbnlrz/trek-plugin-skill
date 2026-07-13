@@ -237,8 +237,12 @@ inject native UI or honour data-rights with no iframe. See
     key; it strands every existing install until each admin re-trusts a new one.
 12. **Manifest `routes[]` and `capabilities.nav` are declarative only.** The
     host reads real routes off the loaded `definePlugin` object; a page's nav
-    entry uses top-level `name` as its label but a **fixed `Blocks` icon** — the
-    manifest `icon` is *not* used for nav (only on the Admin/store card).
+    entry is built from **top-level `name` (label) and top-level `icon` (glyph)**
+    — nothing under `capabilities.nav` is consumed. Your `icon` is any lucide
+    name and TREK draws it everywhere it renders you (nav, trip tab, widget
+    header, settings card, Admin row, store tile). An **unknown name silently
+    falls back to `Blocks`**, so a typo just makes you look generic — `validate`
+    warns, and registry CI rejects it.
 13. **The UI frame loads only its own bundled assets — never external ones.**
     It runs at an opaque origin under a strict CSP where `'self'` matches
     nothing; an explicit **own-path source** allows your `client/` files by

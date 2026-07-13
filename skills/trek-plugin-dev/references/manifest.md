@@ -16,7 +16,7 @@ registry CI, and the TREK install loader all apply the **same** rules
 | `trek` | string | **yes** | The TREK versions you support, as a semver **range**: `">=3.4.0 <4.0.0"`. **Enforced since TREK 3.4.0, at install *and* activation** — see below. Validated as a *satisfiable* range (`">=4.0.0 <3.0.0"` parses but nothing can satisfy it → rejected). It is the **only** compatibility field the registry entry needs — `entry` copies it verbatim, and the older `minTrekVersion`/`maxTrekVersion` are deprecated (they only restated the lower bound, and could not express an exclusive ceiling). |
 | `author` | string | no | Shown in the store. |
 | `description` | string | no | One-line store summary. **The 200-char cap binds the registry *entry*, not the manifest** — manifest parity never compares `description`, so entry and manifest may legitimately differ. But `buildEntry` copies it verbatim and `validate`/`pack` don't check length, so a > 200-char manifest description fails registry CI **after** you've cut the release. Either keep it ≤ 200 chars here, or hand-shorten the entry's `description` afterwards (allowed). Min 5 chars on the entry side. |
-| `icon` | string | no | lucide-react icon name (default `Blocks`). Shown on the **Admin → Plugins** row/store card. **Note:** a page's top-nav entry uses `name` as its label but a **fixed `Blocks` icon** — the declared `icon` is *not* used for nav. |
+| `icon` | string | no | A **lucide** icon name in PascalCase (`"Stethoscope"`, `"Luggage"`) — **any** of lucide's ~1435 icons, not a curated subset. Defaults to `Blocks`. TREK resolves it wherever it draws your plugin: the desktop navbar and mobile bottom nav (page plugins), the trip-planner tab (trip-page), the dashboard widget header, your settings card, the Admin → Plugins row, **and the store tile** (that last one reads the *registry entry's* `icon`, which `entry`/`publish` copy from this field — see [publishing.md](publishing.md)). **An unknown name silently falls back to `Blocks`** — nothing errors, so a typo just makes your plugin look generic. `trek-plugin validate` warns on a name lucide doesn't have, and registry CI **rejects** one. |
 | `homepage` | string | no | Project URL. |
 | `license` | string | no | Shown in store detail; read, not enforced. |
 | `nativeModules` | boolean | no | Must be `false` or absent; `true` is rejected everywhere ("native modules are not allowed (v1)"). |
@@ -35,8 +35,8 @@ registry CI, and the TREK install loader all apply the **same** rules
 
 **Declarative-only keys the scaffold writes but the installed-manifest parser
 does not consume:** `routes[]` (real routes come from the loaded `definePlugin`
-object) and `capabilities.nav` (a page's nav entry uses top-level `name` as its
-label; the icon is a fixed `Blocks` glyph, not the manifest `icon`).
+object) and `capabilities.nav` — a page's nav entry is built from top-level `name`
+(label) and top-level `icon` (glyph), not from anything under `capabilities.nav`.
 
 ## The `trek` range is enforced (TREK ≥ 3.4.0)
 

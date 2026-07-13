@@ -66,6 +66,7 @@ Top level — required: `id`, `name`, `author`, `description`, `repo`, `type`,
 | `homepage` | Optional URI. |
 | `tags` | Optional; up to 8 slugs matching `^[a-z0-9-]{2,24}$`. |
 | `type` | `integration` \| `page` \| `widget` \| `trip-page` — all four are in the registry schema's `type` enum, validated by CI and local `preflight` alike. |
+| `icon` | Optional **lucide** icon name, PascalCase (`"Luggage"`). This is what TREK draws on your **store tile** — the aggregated `dist/index.json` carries no manifests, so the store has nothing else to read, and an entry without one renders a generic `Blocks` glyph. **`entry`/`publish` copy it from the manifest for you** (and on a re-run they refresh it from the manifest, without wiping an icon the entry already carries) — so, unlike `requiredAddons`, there is nothing to hand-add. It is **not** parity-checked against the manifest: like `name`/`description` it's presentation metadata the entry owns, so the two may legitimately differ. CI **rejects** a name lucide doesn't have. |
 | `authorPublicKey` | Optional base64 **raw Ed25519** public key (the 32-byte key; schema allows 40–120 chars). Stable across versions; TOFU-pinned on first install. |
 | `reviewedAt`, `boundOwner` | **CI-maintained — never set these yourself.** |
 | `versions` | Array, min 1, **newest first**. |
@@ -98,14 +99,14 @@ shape is `schema/example-entry.json`; the authority is
 keys).
 
 > **Trap — the SDK's `entry` does NOT copy `requiredAddons`/`pluginDependencies`.**
-> `buildEntry` fills only `homepage`/`tags`/`authorPublicKey`/`operatorEgress`
+> `buildEntry` fills only `homepage`/`tags`/`authorPublicKey`/`operatorEgress`/`icon`
 > beyond the core fields, so if you declare `requiredAddons`/`pluginDependencies`
 > in `trek-plugin.json` you must **hand-add the identical arrays to the entry** or
 > the registry's parity gate fails
 > (`manifest requiredAddons != entry requiredAddons`). Declare neither and both
-> default to `[]` — you're unaffected. (**`operatorEgress` is the exception among
-> these registry fields — `entry`/`preflight` copy it from the manifest
-> automatically, so never hand-edit it.**) **TREK enforces the deps at activation**:
+> default to `[]` — you're unaffected. (**`operatorEgress` and `icon` are the
+> exceptions among these registry fields — `entry`/`preflight` copy them from the
+> manifest automatically, so never hand-edit them.**) **TREK enforces the deps at activation**:
 > a plugin whose required addon is disabled (or whose plugin dependency is
 > missing/mismatched) can't activate, disabling an addon cascades to dependent
 > plugins, dependency cycles are rejected, and installing from the registry
@@ -138,6 +139,7 @@ runs schema/format checks only.)
 | Manifest parity | `id`/`version`/`type`/`apiVersion`/`trek`/`nativeModules` in the repo's `trek-plugin.json` **at `commitSha`** differ from the entry (or `nativeModules: true`) | Align manifest and entry; retag |
 | TREK version range | The published version's manifest declares no `trek` range, or an unsatisfiable one (`">=4.0.0 <3.0.0"`); or the entry's `trek` ≠ the manifest's; or a (deprecated) `minTrekVersion` is present and ≠ that range's lower bound. Versions published *before* the field existed are grandfathered | Declare a real range and re-run `entry`. TREK will not install a plugin without one, so this gate is only telling you early |
 | Dependency parity | The entry's `requiredAddons` or `pluginDependencies` (sorted/normalized) differ from the manifest's at `commitSha` — including the common case where you declared them in the manifest but the SDK's `entry` didn't copy them, so the entry has `[]` | Hand-add the identical `requiredAddons`/`pluginDependencies` arrays to the entry |
+| Icon name | The entry's `icon` is not a real lucide icon name (a typo like `"Luggagee"`, or lowercase `"luggage"` — the schema also pins PascalCase). Absent is fine. **This gate exists because the failure is otherwise silent:** TREK falls back to `Blocks` on an unknown name, so nothing errors at install and your plugin just looks generic in the store | Fix the manifest's `icon` to a real name from <https://lucide.dev/icons> and re-run `entry` (`validate` warns about it locally, before you cut the release) |
 | Artifact hash / over-size | Downloaded asset's SHA-256 ≠ `sha256`, or the bytes are **> ~4 KB larger** than declared `size` (`buf.length > size + 4096`) — no lower-bound check; the 1–50 MB range is a separate *schema* check on the declared `size` | Never touch released assets; cut a new version |
 | Native binary scan | `.node`, `binding.gyp`, or a `prebuild(s)/` path inside the artifact (**zip or tar.gz**) | Remove native deps; repack |
 | Egress | Any `http:outbound*` permission with `egress[]` missing/empty **and `operatorEgress` not `true`**; a bare `*` in `egress`; `operatorEgress` parity mismatch vs the manifest; or `operatorEgress` without an `http:outbound` permission | Declare explicit hosts, or set `operatorEgress: true` in **both** manifest and entry |

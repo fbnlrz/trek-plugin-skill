@@ -397,7 +397,8 @@ canvas behind dark-theme content. A full-bleed accent bar at the very top edge i
 fine — the card's `overflow-hidden` clips it to the rounded corners.
 
 The card is a native **glassy auto-height tool card** (`--glass-bg/-border/
--shadow/-blur`, `--r-xl`, uppercase title + `Blocks` icon in `--ink-3`). The body
+-shadow/-blur`, `--r-xl`, uppercase title + **your manifest `icon`** in `--ink-3`,
+falling back to `Blocks` if you declare none). The body
 has a **60px min-height floor** and **`trek:resize` drives the real height** (the
 design kit reports it automatically) — `PluginWidgets.tsx`. Keep the root
 chrome-free and let the host draw the card.
