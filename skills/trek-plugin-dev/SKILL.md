@@ -21,14 +21,14 @@ Everything is driven by the npm package **`trek-plugin-sdk`** (Node >= 18):
 
 ## Reference files — read before working on that area
 
-| Task at hand | Read |
-|---|---|
-| Writing/editing `trek-plugin.json`, permissions, egress, settings | [references/manifest.md](references/manifest.md) |
-| Server code: `definePlugin`, routes, jobs, `ctx.*`, error codes | [references/server-api.md](references/server-api.md) |
-| Widget/page UI: iframe sandbox, postMessage bridge, CSP | [references/client-bridge.md](references/client-bridge.md) |
-| Local dev server, fixtures, unit tests with `createMockHost` | [references/testing.md](references/testing.md) |
-| Any `trek-plugin` CLI command and its flags | [references/cli.md](references/cli.md) |
-| Releases, registry entries, CI gates, signing, updates | [references/publishing.md](references/publishing.md) |
+| Task at hand                                                      | Read                                                       |
+|-------------------------------------------------------------------|------------------------------------------------------------|
+| Writing/editing `trek-plugin.json`, permissions, egress, settings | [references/manifest.md](references/manifest.md)           |
+| Server code: `definePlugin`, routes, jobs, `ctx.*`, error codes   | [references/server-api.md](references/server-api.md)       |
+| Widget/page UI: iframe sandbox, postMessage bridge, CSP           | [references/client-bridge.md](references/client-bridge.md) |
+| Local dev server, fixtures, unit tests with `createMockHost`      | [references/testing.md](references/testing.md)             |
+| Any `trek-plugin` CLI command and its flags                       | [references/cli.md](references/cli.md)                     |
+| Releases, registry entries, CI gates, signing, updates            | [references/publishing.md](references/publishing.md)       |
 
 ## Golden path
 
@@ -44,8 +44,10 @@ npx trek-plugin-sdk create my-widget --type widget    # or: page | trip-page | i
 
 # 2. Develop: edit trek-plugin.json, server/index.js, client/index.html
 cd my-widget
-npx trek-plugin-sdk dev            # http://localhost:4317 — hot reload,
-                                   # real permission enforcement, no TREK needed
+npx trek-plugin-sdk dev            # http://localhost:4317 — hot reload, no TREK needed
+                                   # Enforces your permissions for real: ctx, hooks, events,
+                                   # jobs AND egress. Read the banner — it warns about any
+                                   # entry point TREK would silently never call (rule 4).
 
 # 3. Where am I? (never fails — orientation, not a gate)
 npx trek-plugin-sdk status         # checklist: Manifest / Code / Docs / Release / Repo
@@ -85,7 +87,7 @@ registry can't ship code under your name. In a terminal `publish` proposes it an
 makes the key for you; in scripts/CI, which are never prompted, pass `--sign`.
 Signing **late is fine** — unsigned → signed at v1.4.0 breaks nobody, because
 nothing is pinned until a signed version installs. The thing you cannot do is
-*stop* (see rule 11), so the only decision that ever really binds is whether
+*stop* (see rule 12), so the only decision that ever really binds is whether
 you'll keep the key safe. Back it up and sign.
 
 Update flow: bump `version` in the manifest, re-pack, new `vX.Y.Z` tag/release,
@@ -142,12 +144,12 @@ See [references/testing.md](references/testing.md).
 
 ## Choosing the plugin type
 
-| `type` | Surfaces | Use for |
-|---|---|---|
-| `widget` | Dashboard card (`sidebar` slot — glassy auto-height) or a **non-interactive** boarding-pass hero strip (`hero` slot, ~110px, desktop-only); plus the scoped planner slots `place-detail` (gets `placeId`), `day-detail` (`dayId`), and `reservation-detail` (`reservationId`) | At-a-glance info (flight status, weather, mascot); a per-place/day/reservation add-on |
-| `page` | Own entry in the top navigation → full-page iframe (you own the layout) | A self-contained tool |
-| `trip-page` | A tab **inside every trip planner**, scoped to the open trip (`tripId` always set); full-frame like `page`, no dashboard nav. `capabilities.tripPage` can replace core tabs / set tab position (tab-takeover) | A per-trip tool |
-| `integration` | No UI; background routes, jobs, events, plus **wired provider hooks** (place-detail / trip-warning / table / map-marker / pdf-section / atlas-layer / journal-entry / trip-card / photo / calendar) | Feeding/syncing data; enriching core UI natively |
+| `type`        | Surfaces                                                                                                                                                                                                                                                                      | Use for                                                                               |
+|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| `widget`      | Dashboard card (`sidebar` slot — glassy auto-height) or a **non-interactive** boarding-pass hero strip (`hero` slot, ~110px, desktop-only); plus the scoped planner slots `place-detail` (gets `placeId`), `day-detail` (`dayId`), and `reservation-detail` (`reservationId`) | At-a-glance info (flight status, weather, mascot); a per-place/day/reservation add-on |
+| `page`        | Own entry in the top navigation → full-page iframe (you own the layout)                                                                                                                                                                                                       | A self-contained tool                                                                 |
+| `trip-page`   | A tab **inside every trip planner**, scoped to the open trip (`tripId` always set); full-frame like `page`, no dashboard nav. `capabilities.tripPage` can replace core tabs / set tab position (tab-takeover)                                                                 | A per-trip tool                                                                       |
+| `integration` | No UI; background routes, jobs, events, plus **wired provider hooks** (place-detail / trip-warning / table / map-marker / pdf-section / atlas-layer / journal-entry / trip-card / photo / calendar)                                                                           | Feeding/syncing data; enriching core UI natively                                      |
 
 Note: **`jobs[]` need the `jobs:run` grant** — with it, declared cron jobs run
 via node-cron (userless); without it they never fire. The persistent
@@ -183,7 +185,22 @@ inject native UI or honour data-rights with no iframe. See
    set `operatorEgress: true`**, which waives the non-empty-`egress[]` rule so you
    ship an **empty `egress[]`** and the **admin configures the real hosts at
    runtime** (for plugins whose egress hosts aren't known up front).
-4. **`ctx.trips`, `ctx.users`, `ctx.costs`, `ctx.ws.*` — and
+   **`trek-plugin dev` runs the same guard** (SDK ≥ 1.5.0), so an undeclared host fails
+   locally instead of after install; private/loopback targets are blocked there too unless
+   you set `TREK_PLUGIN_ALLOW_PRIVATE_EGRESS=on`, exactly as on the real host.
+4. **Silent-no-op trap: a hook / event / job you implement but never GRANT is never
+   called.** `hooks.*` needs its matching `hook:*` permission, `events: []` needs
+   `events:subscribe`, `jobs: []` and `scheduled` need `jobs:run`, and
+   `deleteUserData`/`exportUserData` need `hook:user-data`. Miss one and TREK does **not**
+   error — it installs, activates, and simply **never invokes that entry point**. No log,
+   no warning; all you see is "my plugin does nothing." `validate`/`pack` **cannot** catch
+   it (your `hooks: {}` live in `server/index.js`, which the manifest validator never
+   loads); the *only* automatic check is **`trek-plugin dev`**, which warns at load and
+   403s if you fire one (SDK ≥ 1.5.0). **Run `dev` once before you publish and read the
+   banner.** The lone exception is the notification channel — it's declared in the
+   manifest (`capabilities.notificationChannel`), so `validate` does catch a missing
+   `hook:notification-channel`.
+5. **`ctx.trips`, `ctx.users`, `ctx.costs`, `ctx.ws.*` — and
    `ctx.packing`/`ctx.files`/`ctx.places`/`ctx.days`/`ctx.itinerary`/`ctx.trips.update`/`ctx.meta` — work
    only inside route handlers** (they need the acting user the host binds from the
    request; from `onLoad`/jobs/**events** → `RESOURCE_FORBIDDEN`). `asUserId` is ignored;
@@ -232,15 +249,15 @@ inject native UI or honour data-rights with no iframe. See
    (work userless). AI output is **data-only** — never treat it as instructions.
    If your plugin stores personal data, implement the GDPR **`hook:user-data`**
    (`deleteUserData`/`exportUserData`, userless, own-db).
-5. **No native modules** — `.node`, `binding.gyp`, `prebuilds/` are refused at
+6. **No native modules** — `.node`, `binding.gyp`, `prebuilds/` are refused at
    pack, CI, and install time. `nativeModules` must be `false`/absent.
-6. **Git tag == manifest `version`** (`v1.2.3` ↔ `"version": "1.2.3"`), and the
+7. **Git tag == manifest `version`** (`v1.2.3` ↔ `"version": "1.2.3"`), and the
    registry pins the release asset's exact **sha256** — never re-upload or
    mutate a released `plugin.zip`; cut a new version instead. Re-packs on other
    machines/SDK versions can produce **different bytes** (CRLF, walk order), so
    always take `sha256`/`size` **from the uploaded release asset**, never from a
    local re-pack — see [references/publishing.md](references/publishing.md).
-7. **README quality gate is a hard CI gate:** sections **What it does /
+8. **README quality gate is a hard CI gate:** sections **What it does /
    Screenshots / Permissions / Setup** (substring-matched, any heading level),
    ≥ 400 chars of real prose (headings, tables, code and links are stripped
    before counting — it has to be sentences), at least one screenshot whose URL
@@ -252,16 +269,16 @@ inject native UI or honour data-rights with no iframe. See
    release, not after. `preflight` re-grades the README **at the pinned commit**, which
    is what catches the classic green-tree/red-tag: you wrote it and never committed it.
    See [references/publishing.md](references/publishing.md).
-8. **`docs/` is not shipped** in `plugin.zip` (by design). Commit
+9. **`docs/` is not shipped** in `plugin.zip` (by design). Commit
    `docs/screenshot.png` to the repo — the store fetches it from GitHub at the
    pinned commit.
-9. **Reserved ids:** `registry`, `install`, `rescan`. Everything else matching
-   `^[a-z][a-z0-9-]{2,39}$` is allowed and bound to your GitHub owner on first
-   registration (nobody can repoint it later).
-10. **Registry PR = exactly one file**, `registry/plugins/<id>.json`. Never
+10. **Reserved ids:** `registry`, `install`, `rescan`. Everything else matching
+    `^[a-z][a-z0-9-]{2,39}$` is allowed and bound to your GitHub owner on first
+    registration (nobody can repoint it later).
+11. **Registry PR = exactly one file**, `registry/plugins/<id>.json`. Never
     touch `dist/` (generated on merge) or set `reviewedAt`/`boundOwner`
     (CI-maintained).
-11. **Sign your plugin — and then never stop.** Signing is technically optional
+12. **Sign your plugin — and then never stop.** Signing is technically optional
     (unsigned installs on the sha256 pin alone — one fewer guarantee, not
     "unsafe"), but **sign anyway**: in a terminal `publish` offers it and creates
     the key; in scripts, `--sign` on every publish. The pin only proves the bytes
@@ -280,7 +297,7 @@ inject native UI or honour data-rights with no iframe. See
     Dropping the key or shipping an unsigned version has **no override at all**.
     → **Back up `~/.trek-plugin/signing.key`.** Losing it doesn't just cost you the
     key; it strands every existing install until each admin re-trusts a new one.
-12. **Manifest `routes[]` and `capabilities.nav` are declarative only.** The
+13. **Manifest `routes[]` and `capabilities.nav` are declarative only.** The
     host reads real routes off the loaded `definePlugin` object; a page's nav
     entry is built from **top-level `name` (label) and top-level `icon` (glyph)**
     — nothing under `capabilities.nav` is consumed. Your `icon` is any lucide
@@ -290,7 +307,7 @@ inject native UI or honour data-rights with no iframe. See
     **`validate` now errors on it** (it used to only warn) and registry CI rejects
     it. `create` prompts for one, validates it against lucide as you type, and
     writes a sensible default for the type if you skip it.
-13. **The UI frame loads only its own bundled assets — never external ones.**
+14. **The UI frame loads only its own bundled assets — never external ones.**
     It runs at an opaque origin under a strict CSP where `'self'` matches
     nothing; an explicit **own-path source** allows your `client/` files by
     relative path (`./logo.png`, a bundled `.woff2`, a multi-file Vite/React
@@ -344,7 +361,8 @@ inject native UI or honour data-rights with no iframe. See
   `TREK_PLUGIN_REGISTRY_URL` (override registry source);
   `TREK_PLUGINS_DEV_LINK=1` enables the **DEV-ONLY** dev-link workflow
   (link/reload a local build against real data — off by default, **never set in
-  production**; see [references/cli.md](references/cli.md#dev-link--run-your-local-build-inside-a-real-instance-dev-only)),
+  production**;
+  see [references/cli.md](references/cli.md#dev-link--run-your-local-build-inside-a-real-instance-dev-only)),
   the RPC-limit knobs `TREK_PLUGIN_RPC_BURST` / `_PER_SEC` / `_INFLIGHT`, and the
   log rate-limit knobs `TREK_PLUGIN_LOG_BURST` / `_PER_SEC` (defaults 50/10).
 - **Per-plugin activity log:** every user can audit what plugins did in their
@@ -413,7 +431,8 @@ an agent-generated report**) — it's already filled in."*
 **Skill file + section:** references/<file>.md → <section>
 **What the skill says:** <quote the exact wording, or "n/a — not covered">
 **What actually happens / what's missing:** <the correct fact or the gap>
-**Evidence:** source-read | real TREK instance | trek-plugin dev | custom harness (no real CSP/sandbox) | inferred (unconfirmed)
+**Evidence:** source-read | real TREK instance | trek-plugin dev | custom harness (no real CSP/sandbox) | inferred (
+unconfirmed)
 **Citation / repro:** <TREK repo path @ commit/tag, or exact steps>
 **TREK version:** <x.y.z or unknown>
 **trek-plugin-sdk version:** <x.y.z or unknown>
