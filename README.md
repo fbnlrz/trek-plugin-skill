@@ -152,6 +152,18 @@ symlinks need `git config core.symlinks true` — otherwise git checks them out
 as plain text files and Codex silently finds no skill; copy the directory
 instead if that's a concern.
 
+**As an installable Codex plugin.** The repo also ships `.codex-plugin/plugin.json`
+and `.agents/plugins/marketplace.json`, mirroring the layout OpenAI uses in
+[openai/plugins](https://github.com/openai/plugins). That lets you add this repo
+as a plugin marketplace instead of copying files:
+
+```
+codex plugin marketplace add liketrek/Plugin-Skill
+```
+
+Unlike the Claude manifest, the Codex one carries an explicit `version` — Codex
+caches installs per version (see [Updating](#updating)).
+
 However you install it, the skill triggers automatically when a task involves
 TREK plugins, `trek-plugin-sdk`, `trek-plugin.json`, or the TREK-Plugins
 registry — or invoke it explicitly with `/trek-plugin-dev` (Claude Code).

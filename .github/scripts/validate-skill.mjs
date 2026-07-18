@@ -157,6 +157,52 @@ if (!existsSync(codexDir)) {
   }
 }
 
+// ------------------------------------------------------- codex plugin files
+
+// Format mirrors openai/plugins: .codex-plugin/plugin.json points at ./skills/,
+// .agents/plugins/marketplace.json lists the plugin. Codex has no published
+// schema and no validate CLI, so these are structural checks only.
+const codexPlugin = existsSync(join(ROOT, '.codex-plugin/plugin.json'))
+  ? readJson('.codex-plugin/plugin.json')
+  : null
+
+if (codexPlugin) {
+  for (const f of ['name', 'version', 'description']) {
+    if (!codexPlugin[f]) fail(`.codex-plugin/plugin.json: required field "${f}" missing`)
+  }
+  if (plugin && codexPlugin.name !== plugin.name) {
+    fail(`.codex-plugin/plugin.json: name "${codexPlugin.name}" differs from .claude-plugin name "${plugin.name}"`)
+  }
+  if (codexPlugin.version && !/^\d+\.\d+\.\d+/.test(codexPlugin.version)) {
+    fail(`.codex-plugin/plugin.json: version "${codexPlugin.version}" is not semver`)
+  }
+  const skillsRef = codexPlugin.skills
+  if (skillsRef && !existsSync(join(ROOT, skillsRef))) {
+    fail(`.codex-plugin/plugin.json: "skills": "${skillsRef}" does not exist`)
+  }
+  if (codexPlugin.license === 'MIT' && !existsSync(join(ROOT, 'LICENSE'))) {
+    fail('.codex-plugin/plugin.json declares MIT but no LICENSE file exists')
+  }
+
+  const codexMarket = existsSync(join(ROOT, '.agents/plugins/marketplace.json'))
+    ? readJson('.agents/plugins/marketplace.json')
+    : null
+  if (!codexMarket) {
+    warn('.agents/plugins/marketplace.json: missing — repo is not addable via `codex plugin marketplace add`')
+  } else {
+    const entries = codexMarket.plugins ?? []
+    if (!entries.some((e) => e.name === codexPlugin.name)) {
+      fail(`.agents/plugins/marketplace.json: no entry named "${codexPlugin.name}"`)
+    }
+    for (const e of entries) {
+      if (!e.source?.source) fail(`.agents/plugins/marketplace.json: "${e.name}" has no source.source`)
+      if (e.source?.source === 'local' && !existsSync(join(ROOT, e.source.path ?? ''))) {
+        fail(`.agents/plugins/marketplace.json: "${e.name}" local path "${e.source?.path}" does not exist`)
+      }
+    }
+  }
+}
+
 // ------------------------------------------------------------------- report
 
 for (const w of warnings) console.log(`⚠ ${w}`)
