@@ -2,9 +2,9 @@
 
 An **agent skill** that teaches AI coding agents (Claude Code and other
 SKILL.md-compatible agents) how to build, test, and publish plugins for
-[TREK](https://github.com/mauriceboe/TREK) — the self-hosted travel planner —
+[TREK](https://github.com/liketrek/TREK) — the self-hosted travel planner —
 and its community registry
-[TREK-Plugins](https://github.com/mauriceboe/TREK-Plugins).
+[TREK-Plugins](https://github.com/liketrek/TREK-Plugins).
 
 ## What the agent learns
 
@@ -61,7 +61,7 @@ this as `.claude/settings.json` in your repo root:
 {
   "extraKnownMarketplaces": {
     "trek-plugin-skill": {
-      "source": { "source": "github", "repo": "fbnlrz/trek-plugin-skill" }
+      "source": { "source": "github", "repo": "liketrek/Plugin-Skill" }
     }
   },
   "enabledPlugins": ["trek-plugin-dev@trek-plugin-skill"]
@@ -69,7 +69,8 @@ this as `.claude/settings.json` in your repo root:
 ```
 
 The `enabledPlugins` entry is `<plugin>@<marketplace-key>` — it must match the
-key under `extraKnownMarketplaces`. Every new session then installs the latest
+key under `extraKnownMarketplaces`. That key is a local alias you choose; it does
+not have to match the repository name. Every new session then installs the latest
 skill from this repo's `main`.
 
 **Way 2 — vendor the files** (no marketplace, no network needed at session
@@ -77,7 +78,7 @@ start; you update by re-copying). Copy the skill folder into your repo —
 sessions auto-load `.claude/skills/**/SKILL.md`:
 
 ```bash
-git clone --depth 1 https://github.com/fbnlrz/trek-plugin-skill /tmp/tps
+git clone --depth 1 https://github.com/liketrek/Plugin-Skill /tmp/tps
 mkdir -p /path/to/your-repo/.claude/skills
 cp -r /tmp/tps/skills/trek-plugin-dev /path/to/your-repo/.claude/skills/
 cd /path/to/your-repo && git add .claude && git commit -m "Add trek-plugin-dev skill"
@@ -91,7 +92,7 @@ If you'd rather install it for **yourself** instead of a repo, the interactive
 `/plugin` command works in the local CLI, Desktop app, and IDE extensions:
 
 ```
-/plugin marketplace add fbnlrz/trek-plugin-skill
+/plugin marketplace add liketrek/Plugin-Skill
 /plugin install trek-plugin-dev@trek-plugin-skill
 ```
 
@@ -138,7 +139,7 @@ session installs the latest `main`**. You don't bump anything to get updates.
   {
     "extraKnownMarketplaces": {
       "trek-plugin-skill": {
-        "source": { "source": "github", "repo": "fbnlrz/trek-plugin-skill", "ref": "v1.2.0" }
+        "source": { "source": "github", "repo": "liketrek/Plugin-Skill", "ref": "v1.2.0" }
       }
     },
     "enabledPlugins": ["trek-plugin-dev@trek-plugin-skill"]
@@ -161,10 +162,10 @@ session installs the latest `main`**. You don't bump anything to get updates.
 ## Sources
 
 Built from the primary sources (July 2026): the
-[TREK](https://github.com/mauriceboe/TREK) repo (`plugin-sdk/`, server plugin
-runtime), the [TREK wiki](https://github.com/mauriceboe/TREK/wiki)
+[TREK](https://github.com/liketrek/TREK) repo (`plugin-sdk/`, server plugin
+runtime), the [TREK wiki](https://github.com/liketrek/TREK/wiki)
 (Plugin-Development, Plugin-Permissions, Plugin-Publishing, Plugins), and the
-[TREK-Plugins](https://github.com/mauriceboe/TREK-Plugins) registry (schemas,
+[TREK-Plugins](https://github.com/liketrek/TREK-Plugins) registry (schemas,
 CI scripts, koffi example). Community plugins are third-party software — see
 the registry's security notes.
 
@@ -200,7 +201,7 @@ Fill in the skill-feedback block for this — be honest in the Evidence field.
 ### Submitting it (three steps)
 
 1. Copy the block the agent printed.
-2. Open a [new issue](https://github.com/fbnlrz/trek-plugin-skill/issues/new/choose)
+2. Open a [new issue](https://github.com/liketrek/Plugin-Skill/issues/new/choose)
    and pick **📋 Paste an agent-generated report**.
 3. Paste over the template body and submit — that's the whole job.
 
