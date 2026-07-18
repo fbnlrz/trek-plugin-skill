@@ -34,6 +34,7 @@ and its community registry
 ## Layout
 
 ```
+.agents/skills/trek-plugin-dev  → symlink to skills/trek-plugin-dev (Codex discovery)
 skills/trek-plugin-dev/
 ├── SKILL.md                    # entry point: workflow, rules, decision tables
 ├── references/
@@ -118,9 +119,42 @@ config (resuming reuses cached config). Docs:
 [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web) ·
 [Discover plugins](https://code.claude.com/docs/en/discover-plugins).
 
+### OpenAI Codex
+
+The same `SKILL.md` works in Codex unchanged — its frontmatter is deliberately
+limited to `name` and `description`, the two fields Codex requires. Only the
+*discovery path* differs: Codex does not read `.claude/skills` or a top-level
+`skills/`. It scans **`.agents/skills`** in every directory from the working
+directory up to the repository root, plus `$HOME/.agents/skills` and
+`/etc/codex/skills`
+([docs](https://learn.chatgpt.com/docs/build-skills)).
+
+This repo ships that path already — `.agents/skills/trek-plugin-dev` is a
+symlink to `skills/trek-plugin-dev`, so a plain clone works in Codex with no
+setup.
+
+**In your own plugin repo**, do the same:
+
+```bash
+mkdir -p .agents/skills
+git clone --depth 1 https://github.com/liketrek/Plugin-Skill /tmp/tps
+cp -r /tmp/tps/skills/trek-plugin-dev .agents/skills/
+```
+
+Or user-scoped, for every repo you touch:
+
+```bash
+cp -r skills/trek-plugin-dev ~/.agents/skills/
+```
+
+Symlink the **directory**, never `SKILL.md` itself. On Windows, committed
+symlinks need `git config core.symlinks true` — otherwise git checks them out
+as plain text files and Codex silently finds no skill; copy the directory
+instead if that's a concern.
+
 However you install it, the skill triggers automatically when a task involves
 TREK plugins, `trek-plugin-sdk`, `trek-plugin.json`, or the TREK-Plugins
-registry — or invoke it explicitly with `/trek-plugin-dev`.
+registry — or invoke it explicitly with `/trek-plugin-dev` (Claude Code).
 
 ## Updating
 
