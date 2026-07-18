@@ -1,6 +1,6 @@
 # Publishing — releases, registry entries, CI gates
 
-Distribution model: the [TREK-Plugins](https://github.com/mauriceboe/TREK-Plugins)
+Distribution model: the [TREK-Plugins](https://github.com/liketrek/TREK-Plugins)
 repo is a **static index**. Instances fetch one file, `dist/index.json`. Your
 code, README, screenshots, and release artifacts live in **your own public
 GitHub repo** (convention: `trek-plugin-<id>`); the registry stores only one
@@ -96,8 +96,9 @@ Per version — required: `version`, `gitTag`, `commitSha`, `downloadUrl`,
 `trek-plugin entry --repo <o/n> --tag <vX.Y.Z>` computes all derived fields;
 `--merge existing.json` prepends a new version for updates. The canonical
 shape is `schema/example-entry.json`; the authority is
-`schema/plugin-entry.schema.json` (additionalProperties: false — no extra
-keys).
+`schema/plugin-entry.schema.json` (strict — `unevaluatedProperties: false`, no
+extra keys; the CI-computed `downloadCount` you see in `dist/index.json` lives
+only in `registry.schema.json`'s published shape, never in an entry).
 
 > **`entry` mirrors every parity-checked field for you — hand-add nothing.**
 > `buildEntry` used to omit `requiredAddons`/`pluginDependencies`, so **any** plugin
@@ -390,7 +391,7 @@ npx trek-plugin-sdk entry --repo you/my-plugin --tag v1.0.0 --out entry.json
 # 2. Fork + clone the registry (the fork clone gets `upstream` automatically;
 #    omit --remote — gh rejects it when a repo argument is given):
 cd ..
-gh repo fork mauriceboe/TREK-Plugins --clone
+gh repo fork liketrek/TREK-Plugins --clone
 cd TREK-Plugins && git checkout -b add-<id>
 
 # 3. Drop the entry at the required path and PR ONLY that one file:
@@ -399,12 +400,12 @@ cp ../my-plugin/entry.json registry/plugins/<id>.json
 git add registry/plugins/<id>.json
 git commit -m "Add <id>"
 git push -u origin add-<id>
-gh pr create --repo mauriceboe/TREK-Plugins --fill
+gh pr create --repo liketrek/TREK-Plugins --fill
 ```
 
 Manual-path snags:
 
-- **Fork/clone already exists:** `gh repo fork mauriceboe/TREK-Plugins --clone`
+- **Fork/clone already exists:** `gh repo fork liketrek/TREK-Plugins --clone`
   fails (`already exists … not an empty directory`, exit 128) if you forked or
   cloned before. Reuse the existing clone instead: `cd TREK-Plugins && git fetch
   upstream main && git checkout -B add-<id> upstream/main` (or `gh repo sync`).
